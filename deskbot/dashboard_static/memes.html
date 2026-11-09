@@ -196,6 +196,12 @@ a{color:inherit;text-decoration:none}
 .toggle input{width:22px;height:22px;accent-color:var(--green)}
 .ev{display:grid;grid-template-columns:44px 84px minmax(0,1fr);gap:8px;font:12.5px/1.45 var(--mono);padding:4px 0;border-bottom:1px solid #15171b}
 .ev .rs{color:var(--t2);overflow-wrap:anywhere}
+.lo{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+.lo .tx{flex:1;min-width:0;font-size:14.5px}
+.lo .tx span{display:block;font:12px var(--mono);color:var(--t3);margin-top:2px;overflow-wrap:anywhere}
+details.raw{margin-top:10px}
+details.raw summary{cursor:pointer;min-height:40px;display:flex;align-items:center;color:var(--t2);font-size:14px}
+details.raw pre{margin:6px 0 0;padding:10px;border-radius:12px;background:var(--card-2);font:11px/1.5 var(--mono);color:var(--t2);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* sheets */
 .sheet-bg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.66);display:flex;align-items:flex-end;justify-content:center}
@@ -285,6 +291,7 @@ a{color:inherit;text-decoration:none}
       <div class="btns"><button class="btn primary" id="push-on" type="button">Ativar</button><button class="btn" id="push-off" type="button" hidden>Desligar</button></div>
       <p class="cuts" id="push-state" role="status"></p>
     </div>
+    <div class="panel" id="live-panel" hidden><h3>Dinheiro real · Hyperliquid</h3><div id="live-body"></div></div>
     <div class="panel"><h3>Dados</h3><div class="kv" id="acc-feeds"></div></div>
     <div class="links" id="acc-links"></div>
     <p class="note">Tudo em papel: nenhuma carteira, nenhuma ordem real. Comprar ou vender nas apps é dinheiro real e decisão tua; esta mesa nunca o faz por ti.</p>
@@ -654,7 +661,39 @@ function renderAgents(d) {
 }
 
 /* ---------------------------------------------------------------- account tab */
+function liveText(o) {
+  const ord = (o.actions || []).find(a => a.type === "order" && (a.orders || []).length);
+  const entry = ord ? ord.orders.find(x => x.t && x.t.limit) : null;
+  const sl = (o.actions || []).flatMap(a => a.orders || []).find(x => x.t && x.t.trigger);
+  const verb = {open: "Abrir", half: "Fechar metade", close: "Fechar"}[o.what] || o.what;
+  let t = `${verb} ${o.side} ${o.coin}${o.what === "open" && o.lev ? " " + o.lev + "x" : ""}`;
+  if (entry) t += ` · ${entry.s} ${o.coin} IOC ${entry.b ? "≤" : "≥"} $${entry.p}`;
+  if (sl && o.what !== "close") t += ` · stop $${sl.t.trigger.triggerPx}`;
+  if (!entry && o.actions && o.actions[0] && o.actions[0].note) t += ` · ${o.actions[0].note}`;
+  return t;
+}
+function renderLive(d) {
+  const L = d.live || {}, box = $("#live-body");
+  $("#live-panel").hidden = !PERPS;
+  if (!PERPS) return;
+  if (!L.mode) { box.innerHTML = `<p class="cuts">Começa uma sessão de futuros: cada trade em papel prepara a ordem real exata, que fica registada aqui. Nada é enviado.</p>`; return; }
+  const lim = L.limits || {}, reasons = Object.entries(L.block_reasons || {}).map(([k, n]) => `${k} (${n})`).join(" · ");
+  const orders = (L.orders || []).slice(-6).reverse();
+  box.innerHTML = `<div class="kv">${[
+      ["modo", L.mode === "dryrun" ? "dry-run · nada é enviado" : L.mode],
+      ["ordens preparadas", String(L.prepared || 0)],
+      ["bloqueadas pelos limites", (L.blocked || 0) + (reasons ? " · " + reasons : "")],
+      ["enviadas", "0"],
+      ["limites", `máx. $${lim.max_order_usd} por ordem · perda máx. $${lim.max_daily_loss_usd}/dia · ${lim.max_leverage}x · ${lim.max_open} abertas`],
+      ["conta real", L.address_set && L.account && L.account.value != null ? `${usdP(L.account.value)} (só leitura)` : "não ligada (opcional)"],
+    ].map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}</div>
+    ${L.note ? `<p class="cuts" style="color:var(--yellow)">${esc(L.note)}</p>` : ""}
+    ${orders.length ? orders.map(o => `<div class="lo">${ico(o.what === "open" ? "EXECUTOR" : "RISK", 30)}<div class="tx">${esc(liveText(o))}<span>${esc(hhmm(o.ts))} · ${esc(o.blocked && o.blocked.length ? o.blocked.join(" · ") : (o.checks || []).join(" · ") || "pronta")}</span></div><span class="chip ${o.blocked && o.blocked.length ? "armed" : "blue"}">${o.blocked && o.blocked.length ? "bloqueada" : "não enviada"}</span></div>`).join("") : `<p class="cuts">Ainda sem trades nesta sessão.</p>`}
+    ${orders.length ? `<details class="raw"><summary>Ver o pedido exato da última ordem</summary><pre>${esc(JSON.stringify(orders[0].actions, null, 1))}</pre></details>` : ""}
+    <p class="cuts t3">Próximo passo, só se quiseres: um piloto pequeno com dinheiro real. Precisa de uma API wallet criada por ti na Hyperliquid (pode negociar, não pode levantar) e de ligares o modo tu mesmo no PC.</p>`;
+}
 function renderAccount(d) {
+  renderLive(d);
   if (!S.pushChecked) { S.pushChecked = true; pushRefresh(); }
   const running = !!d.running, P = d.params || {};
   $("#acc-state").textContent = running ? "a correr" : "parada";
@@ -746,6 +785,12 @@ function rulesBlock(c, d, scale) {
     rows.push(["RISK", `Hard stop <small>−${nf(0).format(sp * 100)}%</small>`, `vende a ${f(c.entry * (1 - sp))} só se o 2× nunca chegar`, `stop ${pct(-sp, 0)} · sem reforços`, half ? ["off", "desligado"] : closed ? ["off", "fim"] : ["armed", "armado"]]);
     rows.push(["RISK", `Saída <small>${esc(venue)} · metade a 2×</small>`, half ? `vendeu metade a ${f(c.half_px)} · a entrada voltou` : `metade a ${f(c.entry * (P.half_at || 2))} · a entrada volta`, "", half ? ["done", "vendeu metade"] : closed ? ["off", "não chegou"] : ["", "pendente"]]);
     rows.push(["RISK", `Trailing <small>${nf(0).format((P.trail_pct || .1) * 100)}% do máximo</small>`, half ? (c.trail ? `sai a ${f(c.trail)} · máximo ${f(c.peak)}` : "seguiu o máximo") : "só depois do 2×", "", half ? (closed ? ["done", "saiu"] : ["armed", "armado"]) : ["off", "à espera"]]);
+  }
+  if (PERPS) {
+    const lo = ((d.live || {}).orders || []).filter(o => o.coin === sym && o.what === "open").pop();
+    if (lo) rows.push(["EXECUTOR", `Hyperliquid <small>dry-run</small>`, liveText(lo),
+      lo.blocked && lo.blocked.length ? lo.blocked.join(" · ") : "pronta · não assinada nem enviada",
+      lo.blocked && lo.blocked.length ? ["armed", "bloqueada"] : ["blue", "não enviada"]]);
   }
   const state = closed ? "fechada" : half ? "trailing armado" : "stop armado";
   return `<div class="rules-h"><b>Regras da mesa · ${esc(sym)}</b><span>${rows.length} regras · ${esc(state)}</span></div>` +
