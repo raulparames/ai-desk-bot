@@ -404,7 +404,10 @@ function coinAv(sym, img, size = 40) {
 
 /* ---------------------------------------------------------------- data */
 const S = {d: null, lastEv: null, minutes: 720, eur: 110, lev: 5, range: "LIVE", allEv: false, view: "home", celebInit: false,
-           venue: PERPS ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn")};
+           venue: PERPS ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn"),
+           style: store.get("deskbot-style") === "mais" ? "mais" : "poucas"};
+const STYLE = {poucas: {name: "Poucas e boas", note: "3 baleias de $500+ · 4 votos em 5 · top 10 abaixo de 25%"},
+               mais: {name: "Mais entradas", note: "2 baleias de $300+ · 3 votos em 5 · top 10 abaixo de 40% · mais trades, mais perdas pequenas"}};
 const normEvents = log => (log || []).map(e => Object.assign({}, e, {agent: e.verdict === "sell" ? "RISK" : (OLD[e.agent] || e.agent)}));
 async function load() {
   let d;
@@ -459,7 +462,8 @@ function roll(el, text) {
 function renderHome(d) {
   const open = (d.positions || []).length;
   const gm = !PERPS && d.gmgn_key ? " · dados GMGN" : "";
-  $("#conn").innerHTML = `<b>${esc(venueName(d))}</b><span>ligada${esc(gm)} · Compounder 40% · ${open} ${open === 1 ? "aberta" : "abertas"}</span>${d.running ? '<i class="dot"></i>' : ""}`;
+  const sty = !PERPS && d.style === "mais" ? " · mais entradas" : "";
+  $("#conn").innerHTML = `<b>${esc(venueName(d))}</b><span>ligada${esc(gm)} · Compounder 40%${esc(sty)} · ${open} ${open === 1 ? "aberta" : "abertas"}</span>${d.running ? '<i class="dot"></i>' : ""}`;
   const eq = d.equity_eur ?? 0, start = d.start_eur || 1, diff = eq - start, mult = eq / start;
   $("#bal").className = "bal" + (diff > 0.005 ? " upc" : "");
   roll($("#bal"), nf(2).format(eq) + " €");
@@ -704,7 +708,7 @@ function renderAccount(d) {
     ["agora", eur(d.equity_eur)],
     ["livre", eur(d.cash_eur)],
     ["sessão", d.started ? `${hhmm(d.started)} → ${hhmm(d.ends)}${running ? "" : " (terminada)"}` : "—"],
-    ...(PERPS ? [["alavancagem", (d.lev || S.lev) + "x (máx. 10x)"]] : []),
+    ...(PERPS ? [["alavancagem", (d.lev || S.lev) + "x (máx. 10x)"]] : [["entradas", (STYLE[d.style] || STYLE.poucas).name]]),
     ["Compounder", `${nf(0).format((P.stack_pct || .4) * 100)}% do livre · máx. ${P.max_open || 2} abertas`],
   ].map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
   $("#b-stop").disabled = !running; $("#b-new").disabled = running; $("#b-recap").hidden = !d.recap;
@@ -895,7 +899,9 @@ function openConnect() {
   const data = PERPS ? "Hyperliquid · top traders · livro de ordens" : (d.gmgn_key ? "GMGN · smart money · KOLs · rug score" : "GeckoTerminal · Jupiter · pump.fun");
   sheet(`<div class="conn-icons"><img src="/icon-180.png" alt=""><span class="dots3">• • •</span><span class="vbadge" id="c-badge">${VENUE_NAME[S.venue]}</span></div>
     <h2 id="c-h">Ligar à ${VENUE_NAME[S.venue]}</h2><p class="t2" style="text-align:center;margin:0;font-size:14px" id="c-sub">AI Desk Bot quer negociar ${K.what} através da ${VENUE_NAME[S.venue]} · em papel</p>
-    ${PERPS ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>`}
+    ${PERPS ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>
+    <div class="lbl">entradas</div><div class="choice" id="c-sty">${Object.entries(STYLE).map(([k, x]) => `<button type="button" data-s="${k}" aria-pressed="${k === S.style}">${x.name}</button>`).join("")}</div>
+    <p class="t3" id="c-sty-note" style="font-size:12.5px;margin:6px 0 0">${STYLE[S.style].note}</p>`}
     <div class="kv" style="margin-top:14px"><div><span>${PERPS ? "exchange" : "chain"}</span><span>${PERPS ? "Hyperliquid (a da INVO)" : "Solana"}</span></div><div><span>dados</span><span>${esc(data)}</span></div><div><span>agentes</span><span>5 · Scanner → Risco</span></div><div><span>sessão</span><span id="c-sess"></span></div></div>
     <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
     <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button type="button" data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
@@ -906,12 +912,13 @@ function openConnect() {
   sess();
   const pick = (sel, fn) => $$(sel + " button").forEach(b => b.onclick = () => { fn(b); $$(sel + " button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
   pick("#c-ven", b => { S.venue = b.dataset.v; store.set("deskbot-venue", S.venue); const n = VENUE_NAME[S.venue]; $("#c-badge").textContent = n; $("#c-h").textContent = "Ligar à " + n; $("#c-acc").textContent = n; $("#c-sub").textContent = `AI Desk Bot quer negociar ${K.what} através da ${n} · em papel`; });
+  pick("#c-sty", b => { S.style = b.dataset.s; store.set("deskbot-style", S.style); $("#c-sty-note").textContent = STYLE[S.style].note; });
   pick("#c-dur", b => { S.minutes = +b.dataset.m; });
   pick("#c-eur", b => { S.eur = +b.dataset.e; });
   pick("#c-lev", b => { S.lev = +b.dataset.l; });
   $("#c-go").onclick = async () => {
     const go = $("#c-go"); go.disabled = true; go.textContent = "A ligar…";
-    const body = PERPS ? {minutes: S.minutes, eur: S.eur, lev: S.lev} : {minutes: S.minutes, eur: S.eur, venue: S.venue};
+    const body = PERPS ? {minutes: S.minutes, eur: S.eur, lev: S.lev} : {minutes: S.minutes, eur: S.eur, venue: S.venue, style: S.style};
     try {
       await api(K.api + "/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
       go.textContent = "Ligado ✓"; go.classList.add("done");
@@ -923,7 +930,7 @@ function openConnect() {
 function openRecap() {
   const r = S.d && S.d.recap; if (!r) return;
   const diff = r.end_eur - r.start_eur, h = r.minutes >= 60 ? `${Math.round(r.minutes / 60)}h` : `${r.minutes} min`;
-  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="/icon-180.png" alt="" width="38" height="38" style="border-radius:10px"><div><b style="font-size:18px">Resumo de ${esc(h)}</b><div class="t3 mono" style="font-size:11.5px">${K.chip} · na ${esc(venueName(S.d))} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="/icon-180.png" alt="" width="38" height="38" style="border-radius:10px"><div><b style="font-size:18px">Resumo de ${esc(h)}</b><div class="t3 mono" style="font-size:11.5px">${K.chip}${!PERPS && S.d.style === "mais" ? " · mais entradas" : ""} · na ${esc(venueName(S.d))} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
     <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
     <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="mult${diff < 0 ? " neg" : ""}">${nf(2).format(r.end_eur / (r.start_eur || 1))}×</span></div>
     <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>${K.unit}</span><b>${r.coins_seen}</b></div><div><span>agentes</span><b>5</b></div><div><span>acerto</span><b>${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"}</b></div></div>

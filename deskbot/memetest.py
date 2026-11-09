@@ -126,6 +126,7 @@ class Desk:
     agents: dict = field(default_factory=dict)           # agent -> its latest reading (memes mode)
     venue: str = ""                                      # app the coins open in: gmgn or fomo (memes mode)
     feeds: dict = field(default_factory=dict)            # data sources and their state (memes mode)
+    style: str = ""                                      # entries: "poucas" (strict) or "mais" (memes mode)
 
 
 def _now() -> datetime:

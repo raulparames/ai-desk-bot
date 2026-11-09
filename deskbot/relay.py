@@ -164,7 +164,7 @@ def run_command(cmd: dict, owner: str) -> dict:
                                                   float(p.get("lev") or 5))
             else:
                 code, res = desks_api.start_memes(int(p.get("minutes") or 0), float(p.get("eur") or 110),
-                                                  str(p.get("venue") or "gmgn"))
+                                                  str(p.get("venue") or "gmgn"), str(p.get("style") or "poucas"))
         elif kind == "stop_session":
             perps = p.get("desk") == "perps"
             if owner == "github":
@@ -278,7 +278,7 @@ def _gh_session(relay: Relay, session: dict):
         desk = perpdesk.PerpDesk(minutes, eur, min(float(session.get("lev") or 5), 10))
     else:
         from . import memedesk
-        desk = memedesk.MemesDesk(minutes, eur, str(session.get("venue") or "gmgn"))
+        desk = memedesk.MemesDesk(minutes, eur, str(session.get("venue") or "gmgn"), str(session.get("style") or "poucas"))
     done = threading.Event()
     _GH_KIND["desk"] = "perps" if session.get("desk") == "perps" else "memes"
     _GH_SESSION.set()

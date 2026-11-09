@@ -302,6 +302,7 @@ def main(argv=None):
     md.add_argument("--minutes", type=float, default=720)
     md.add_argument("--eur", type=float, default=110)
     md.add_argument("--venue", choices=("gmgn", "fomo"), default="gmgn", help="app the coins open in (paper either way)")
+    md.add_argument("--style", choices=("poucas", "mais"), default="poucas", help="few strict entries or more, looser ones")
     pd = sub.add_parser("perpdesk", help="futures mode: 5-agent Hyperliquid perps desk in paper (INVO's exchange)")
     pd.add_argument("--minutes", type=float, default=720)
     pd.add_argument("--eur", type=float, default=110)
@@ -340,7 +341,7 @@ def cmd_memedesk(args):
     fh = logging.FileHandler(ROOT / "logs" / "memetest.log", encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger("memetest").addHandler(fh)
-    print(memedesk.run(args.minutes, args.eur, args.venue))
+    print(memedesk.run(args.minutes, args.eur, args.venue, args.style))
 
 
 def cmd_perpdesk(args):

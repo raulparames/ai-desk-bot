@@ -107,15 +107,16 @@ def _spawn(folder: Path, args: list[str]):
             break
 
 
-def start_memes(minutes: int, eur: float = 110, venue: str = "gmgn") -> tuple[int, dict]:
+def start_memes(minutes: int, eur: float = 110, venue: str = "gmgn", style: str = "poucas") -> tuple[int, dict]:
     if err := _check(minutes, eur):
         return 400, {"error": err}
     venue = venue if venue in VENUES else "gmgn"
+    style = style if style in ("poucas", "mais") else "poucas"
     if meme_running():
         return 409, {"error": "Já há uma sessão de memes a correr"}
-    _spawn(MEME_DIR, ["memedesk", "--minutes", str(minutes), "--eur", str(eur), "--venue", venue])
-    log.info("Memes session started from the app: %d min, %s EUR, %s", minutes, eur, venue)
-    return 202, {"started": True, "minutes": minutes, "eur": eur, "venue": venue}
+    _spawn(MEME_DIR, ["memedesk", "--minutes", str(minutes), "--eur", str(eur), "--venue", venue, "--style", style])
+    log.info("Memes session started from the app: %d min, %s EUR, %s, %s", minutes, eur, venue, style)
+    return 202, {"started": True, "minutes": minutes, "eur": eur, "venue": venue, "style": style}
 
 
 def stop_memes() -> tuple[int, dict]:
@@ -288,6 +289,10 @@ def _memes() -> dict:
         return {**base, "exists": False, "status": "idle", "positions": [], "trades": [], "log": [], "curve": [],
                 "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
     rate = st.get("eur_usd") or 1.0
+    if st.get("style") == "mais":   # the rules as this session runs them
+        base["rules"] = [r.replace("3 compras de $500+", "2 compras de $300+").replace("top 10 < 25%", "top 10 < 40%")
+                         .replace("Nota de 0 a 100", "Precisa de 3 votos em 5 (modo mais entradas). Nota de 0 a 100")
+                         for r in base["rules"]]
     cost = st["p"]["cost_per_side"]
     trail = st["p"].get("trail_pct", 0.10)
     positions = []
@@ -346,6 +351,7 @@ def _memes() -> dict:
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap,
             "mode": st.get("mode", "classic"), "agents": st.get("agents", {}),
             "venue": st.get("venue") or "gmgn", "feeds": st.get("feeds", {}), "cash_eur": st.get("cash", 0) / rate,
+            "style": st.get("style") or "poucas",
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
 
 

@@ -50,3 +50,29 @@ def test_wide_scan_reads_all_tokens_cuts_them_and_sends_the_best_two(monkeypatch
     assert len([e for e in desk.d.events if e["verdict"] == "kill"]) == 2   # only two shown on the card
     desk._wide(set())                                         # next minute: same tokens are not counted again
     assert desk.d.counts["trends"]["liquidez"] == 100 and len(desk._mints_seen) == 270
+
+
+def test_more_entries_loosens_whales_votes_and_top10_but_never_the_rug_guard(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+    from deskbot import memetest, memedesk
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    whales = [{"attributes": {"block_timestamp": now, "kind": "buy", "tx_from_address": f"w{i}", "volume_in_usd": "350"}}
+              for i in range(2)]                                        # 2 buyers of $350
+    info = {"data": {"attributes": {"holders": {"distribution_percentage": {"top_10": "33"}}}}}   # top 10 at 33%
+    pool = {"attributes": {"reserve_in_usd": "250000", "transactions": {"h1": {"buyers": 300, "buys": 900, "sells": 400}},
+                           "volume_usd": {"m5": 9000, "h1": 90000}, "price_change_percentage": {"m5": 2, "h1": 10}}}
+    results = {}
+    for style in ("poucas", "mais"):
+        desk = memedesk.MemesDesk(30, 110, "gmgn", style)
+        desk.gmgn.key = ""
+        monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": whales} if "/trades" in path else info)
+        monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": None, "freezeAuthority": None, "decimals": 6})
+        monkeypatch.setattr(desk, "_pairs", lambda pools, session=None: {})
+        results[style] = (desk.smarts("P", "$X", "M")["ok"], desk.debate("P", pool, "$X", "M")["ok"])
+        if style == "mais":   # the rug guard stays on: an active mint is still a no
+            monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": "DEV", "freezeAuthority": None, "decimals": 6})
+            assert desk.debate("P", pool, "$X", "M")["ok"] is False
+            assert desk.d.style == "mais"
+    assert results == {"poucas": (False, False), "mais": (True, True)}   # 2 whales and a 33% top 10: only "mais"

@@ -11,6 +11,11 @@ score, newest: about 300 Solana tokens) and applies the TRENDS cuts to all of th
 numbers (liquidity, 1 h move, age, mint and freeze, size). The best two that pass, by Jupiter's organic
 score, become GeckoTerminal pools for the other agents. The app counts every token actually read.
 
+Two entry styles, picked when the session starts (paper either way):
+  poucas  "few and good", the rules below: 3 whales of $500+, 4 of 5 bull votes, top 10 holders < 25%.
+  mais    "more entries": 2 whales of $300+, 3 of 5 bull votes, top 10 holders < 40%. Mint and freeze
+          revoked, no honeypot and someone selling stay required in both: they are the rug-pull guard.
+
 Steps inside the agents (originally laid out like the "gmgn mode" video):
 
     python -m deskbot memedesk --minutes 720 --eur 110
@@ -75,6 +80,10 @@ REPOS = {
 }
 HALF_AT = 2.0
 VENUES = {"gmgn": "GMGN", "fomo": "FOMO"}
+STYLES = {   # whale size, whales needed, bull votes needed, top-10 holders limit (%)
+    "poucas": {"whale_usd": 500, "min_whales": 3, "min_bulls": 4, "max_top10": 25},
+    "mais": {"whale_usd": 300, "min_whales": 2, "min_bulls": 3, "max_top10": 40},
+}
 BUCKET = {"TRENDS": "trends", "SMARTS": "smarts", "DEBATE": "debate", "ROUTER": "router", "EXEC": "exec",
           "CORE": "core"}
 
@@ -96,10 +105,16 @@ class MemesDesk(MemeTest):
     GMGN_RUG_MAX = 0.30       # GMGN's own line between normal and high rug risk
     GMGN_BOTS_MAX = 0.30      # bundler or insider share of the volume
 
-    def __init__(self, minutes: float, eur: float, venue: str = "gmgn"):
+    MIN_BULLS = 4
+
+    def __init__(self, minutes: float, eur: float, venue: str = "gmgn", style: str = "poucas"):
         super().__init__(minutes, eur, memes_params())
         self.d.mode = "memes"
         self.d.venue = venue if venue in VENUES else "gmgn"
+        self.d.style = style if style in STYLES else "poucas"
+        st = STYLES[self.d.style]
+        self.WHALE_USD, self.MIN_WHALES, self.MIN_BULLS = st["whale_usd"], st["min_whales"], st["min_bulls"]
+        self.p.max_top10_pct = st["max_top10"]
         self.gmgn = Gmgn()
         self._gm: dict[str, dict] = {}          # mint -> GMGN numbers from its trending row
         self._gm_done: set[str] = set()         # GMGN coins already looked up on GeckoTerminal
@@ -427,7 +442,7 @@ class MemesDesk(MemeTest):
         }
         bulls = sum(votes.values())
         bears = len(votes) - bulls
-        ok = not risks and bulls >= 4
+        ok = not risks and bulls >= self.MIN_BULLS
         text = f"bull {bulls} / bear {bears} · " + ("risco ok" if not risks else "risco: " + ", ".join(risks))
         self.event("DEBATE", coin, "pass" if ok else "reject", text, votes=votes, risks=risks, score=40 + 12 * bulls)
         decimals = int((mi or {}).get("decimals") or 6)
@@ -629,5 +644,5 @@ def _thin_series(series: list, n: int) -> list:
     return [series[int(i * step)] for i in range(n)] + [series[-1]]
 
 
-def run(minutes: float, eur: float, venue: str = "gmgn") -> str:
-    return MemesDesk(minutes, eur, venue).run()
+def run(minutes: float, eur: float, venue: str = "gmgn", style: str = "poucas") -> str:
+    return MemesDesk(minutes, eur, venue, style).run()
