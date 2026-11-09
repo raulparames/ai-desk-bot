@@ -1,0 +1,17 @@
+.env
+.venv/
+data/
+logs/
+journal.db
+bot_state.json
+paper_account.json
+__pycache__/
+phone_token.txt
+controls.json
+phone_password.json
+memetest/
+desks/
+reports/
+.pytest_cache/
+*.tmp
+.claude/

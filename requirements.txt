@@ -1,0 +1,8 @@
+pandas>=2.2
+numpy>=1.26
+requests>=2.31
+python-dotenv>=1.0
+pydantic>=2.5
+anthropic>=0.60
+pytest>=8.0
+segno>=1.6

@@ -1,0 +1,82 @@
+# AI Desk Bot settings. Paper trading only.
+# The numbers below come from the backtest in reports/backtest.html: change them,
+# then run `python -m deskbot backtest` again before trusting the change.
+
+[market]
+universe = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT"]
+regime_symbol = "BTCUSDT"
+timeframe = "1d"
+history_start = "2019-01-01"
+
+# Shared base for every sleeve
+[strategy]
+volume_mult = 1.5        # Scout: breakout volume must be >= 1.5x the 20-day average
+volume_window = 20
+trend_ema = 50
+regime_ema = 200         # only buy while BTC is above its 200-day EMA
+atr_period = 14
+stop_atr = 2.0           # initial stop 2 ATR below entry
+trail_atr = 3.5          # trailing stop 3.5 ATR below the highest close
+rsi_max = 85.0
+min_room_r = 2.0         # skip if the prior 1-year high is less than 2R away (same rule the Skeptic enforces live)
+# Rules adapted from the "5 agents" desk guide (x.com/savipww). 0 = off. Backtest 2021-07+ in PESQUISA.md.
+timeout_days = 15        # Risk: "dead money" exit after 15 days... (helped in all 3 periods tested)
+timeout_min_r = 0.5      # ...if the close is still below entry + 0.5R
+trail_start_r = 0.0      # Risk: trailing starts only after +X R (mixed results: off)
+max_extension_atr = 0.0  # Analyst: skip if the close is > X ATR above the breakout level (mixed: off)
+min_quality = 0.0        # Analyst: minimum 0-100 score (noisy in the backtest: off, shown as info)
+max_entry_gap_pct = 0.05 # Executor: skip if the price ran > 5% between the signal close and the buy (live safety)
+
+# Four fixed sleeves, chosen for diversity (fast/slow breakout x target/trailing exit),
+# not for their backtest result. Each trades an equal share of the account.
+[[sleeves]]
+name = "rapido-alvo"
+breakout_lookback = 20
+take_profit_r = 3.0
+
+[[sleeves]]
+name = "rapido-trailing"
+breakout_lookback = 20
+take_profit_r = 0.0
+
+[[sleeves]]
+name = "lento-alvo"
+breakout_lookback = 55
+take_profit_r = 3.0
+
+[[sleeves]]
+name = "lento-trailing"
+breakout_lookback = 55
+take_profit_r = 0.0
+
+[risk]
+risk_per_trade = 0.01    # 1% of the sleeve's equity lost if the stop is hit (1.5% had the best return/drawdown in the backtest)
+max_positions = 4        # per sleeve
+max_position_pct = 0.25  # per sleeve
+max_drawdown_halt = 0.25 # stop opening trades if the account falls 25% from its peak
+min_rr = 2.0             # Skeptic vetoes anything with less than 2:1 reward:risk
+fee = 0.001
+slippage = 0.0005
+
+[ai]
+backend = "claude-cli"   # claude-cli (your Claude Code login) | anthropic (ANTHROPIC_API_KEY) | none (rules only)
+model = "claude-opus-5-5"
+effort = "low"           # News, Sentiment, Skeptic
+boss_effort = "medium"   # Boss (final call)
+news_web_search = false  # true lets the News agent search the web (claude-cli/anthropic), slower and costlier
+timeout_s = 300
+
+[broker]
+kind = "aitrader"        # aitrader (local AI-Trader server, $100k paper) | paper (local JSON ledger)
+aitrader_url = "http://127.0.0.1:8000"  # not "localhost": on Windows it tries IPv6 first and costs ~2 s per call
+paper_start_cash = 100000.0
+
+[live]
+check_minutes = 15       # how often stops/targets are checked
+daily_run_utc_minute = 10
+
+[dashboard]
+lan = true               # true: also reachable from your phone on the home Wi-Fi; every phone request needs the
+                         # secret link from the dashboard's "Telemóvel" button. false = this PC only
+port = 8899

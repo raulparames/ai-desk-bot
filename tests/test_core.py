@@ -1,0 +1,380 @@
+from dataclasses import replace
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from deskbot.backtest import metrics, run_backtest
+from deskbot.config import RiskParams, StrategyParams, load_settings
+from deskbot.desk import BUY, PASS, Desk
+from deskbot.indicators import atr, ema, rsi
+from deskbot.strategy import compute_signals, make_plan, regime_series
+
+
+def synthetic(n=600, seed=0, drift=0.002):
+    rng = np.random.default_rng(seed)
+    close = 100 * np.exp(np.cumsum(rng.normal(drift, 0.03, n)))
+    open_ = np.r_[close[0], close[:-1]] * (1 + rng.normal(0, 0.003, n))
+    high = np.maximum(open_, close) * (1 + rng.uniform(0, 0.02, n))
+    low = np.minimum(open_, close) * (1 - rng.uniform(0, 0.02, n))
+    vol = rng.uniform(1e6, 3e6, n) * (1 + 3 * (rng.uniform(size=n) > 0.93))
+    idx = pd.date_range("2020-01-01", periods=n, freq="D")
+    return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": vol}, index=idx)
+
+
+def test_indicators_basic():
+    df = synthetic()
+    assert ema(df["close"], 10).iloc[:9].isna().all()
+    assert (atr(df) > 0).iloc[20:].all()
+    r = rsi(df["close"]).dropna()
+    assert r.between(0, 100).all()
+
+
+def test_signals_do_not_look_ahead():
+    """Appending future bars must not change any earlier signal."""
+    df = synthetic(700)
+    p = StrategyParams(regime_ema=50)
+    short, full = df.iloc[:500], df
+    s_short = compute_signals(short, regime_series(short, p), p)["signal"]
+    s_full = compute_signals(full, regime_series(full, p), p)["signal"].iloc[:500]
+    pd.testing.assert_series_equal(s_short, s_full)
+
+
+def test_backtest_costs_reduce_returns():
+    data = {"BTCUSDT": synthetic(800, 1), "ETHUSDT": synthetic(800, 2)}
+    p = StrategyParams(regime_ema=50, volume_mult=1.0)
+    free = run_backtest(data, p, RiskParams(fee=0, slippage=0))
+    costly = run_backtest(data, p, RiskParams(fee=0.002, slippage=0.002))
+    assert len(free.trades) > 0
+    assert costly.equity.iloc[-1] < free.equity.iloc[-1]
+
+
+def test_losses_capped_near_one_r_without_gaps():
+    data = {"BTCUSDT": synthetic(800, 3)}
+    res = run_backtest(data, StrategyParams(regime_ema=50, volume_mult=1.0), RiskParams())
+    stops = [t.r_multiple for t in res.trades if t.reason == "stop"]
+    assert stops and min(stops) > -1.6  # gaps can exceed 1R slightly, never wildly on this data
+
+
+def test_position_size_respects_risk():
+    data = {"BTCUSDT": synthetic(800, 4)}
+    r = RiskParams(risk_per_trade=0.01, max_position_pct=1.0, max_positions=1)
+    res = run_backtest(data, StrategyParams(regime_ema=50, volume_mult=1.0), r, initial=10_000)
+    first = next(t for t in res.trades if abs(t.r_multiple) > 0.05)
+    eq_before = res.equity[res.equity.index < first.opened].iloc[-1]
+    risk_per_unit = (first.exit - first.entry) / first.r_multiple
+    assert first.qty * risk_per_unit == pytest.approx(0.01 * eq_before, rel=0.02)
+
+    capped = run_backtest(data, StrategyParams(regime_ema=50, volume_mult=1.0),
+                          replace(r, risk_per_trade=0.05, max_position_pct=0.10), initial=10_000)
+    t0 = capped.trades[0]
+    assert t0.qty * t0.entry <= 0.10 * 10_000 * 1.001
+
+
+def test_metrics_drawdown():
+    eq = pd.Series([100, 120, 60, 90], index=pd.date_range("2024-01-01", periods=4))
+    assert metrics(eq)["max_drawdown"] == pytest.approx(-0.5)
+
+
+class _NoLLM:
+    enabled = False
+    calls = 0
+    cost_usd = 0.0
+
+
+def _plan(**over):
+    df = synthetic(400, 5)
+    p = StrategyParams(regime_ema=50)
+    f = compute_signals(df, regime_series(df, p), p)
+    row = f.iloc[-1].copy()
+    for k, v in over.items():
+        row[k] = v
+    return make_plan("BTCUSDT", row, p)
+
+
+def test_hard_rules_block_without_ai():
+    desk = Desk(_NoLLM(), RiskParams(min_rr=2.0))
+    plan = _plan(regime_on=False)
+    v = desk.discuss(plan, ["s"], [])
+    assert v.decision == PASS and v.hard_checks
+
+
+def test_rules_only_buys_clean_plan():
+    desk = Desk(_NoLLM(), RiskParams(min_rr=2.0))
+    plan = _plan(regime_on=True, resistance=np.nan)
+    v = desk.discuss(plan, ["s"], [])
+    assert v.decision == BUY and v.size_multiplier == 1.0
+
+
+def test_kill_switch_blocks():
+    desk = Desk(_NoLLM(), RiskParams())
+    v = desk.discuss(_plan(regime_on=True, resistance=np.nan), ["s"], [], halted=True)
+    assert v.decision == PASS
+
+
+def test_config_loads_sleeves():
+    s = load_settings()
+    assert len(s.sleeves) == 4
+    assert {sl.params.breakout_lookback for sl in s.sleeves} == {20, 55}
+    assert all(sl.params.min_room_r == s.strategy.min_room_r for sl in s.sleeves)
+
+
+# ---------------------------------------------------------------- rules from the "5 agents" guide
+
+def test_auditor_matches_signal():
+    """Passing every Auditor layer is exactly the Scout's signal, whatever the optional filters."""
+    from deskbot import auditor
+    df = synthetic(700, seed=3)
+    for p in (StrategyParams(regime_ema=50, min_room_r=2.0),
+              StrategyParams(regime_ema=50, max_extension_atr=1.0, min_quality=40)):
+        f = compute_signals(df, regime_series(df, p), p).dropna(subset=["atr", "breakout_level", "ema_trend"])
+        got = [auditor.audit(row, p)["passed"] for _, row in f.iterrows()]
+        assert got == f["signal"].tolist()
+
+
+def test_auditor_first_red_cuts_the_rest():
+    from deskbot import auditor
+    df = synthetic(400)
+    p = StrategyParams(regime_ema=50)
+    f = compute_signals(df, regime_series(df, p), p).dropna(subset=["atr", "breakout_level"])
+    a = next(auditor.audit(r, p) for _, r in f.iterrows() if not r["signal"])
+    st = [x["status"] for x in a["layers"] if x["status"] != auditor.OFF]
+    i = st.index(auditor.FAIL)
+    assert all(s == auditor.OK for s in st[:i]) and all(s == auditor.SKIP for s in st[i + 1:])
+
+
+def test_dead_money_and_trail_start():
+    from deskbot.strategy import entry_ran, is_dead_money, trail_active
+    p = StrategyParams(timeout_days=15, timeout_min_r=0.5, trail_start_r=1.0, max_entry_gap_pct=0.05)
+    assert is_dead_money(15, 104.0, 100.0, 10.0, p)          # +0.4R after 15 days: out
+    assert not is_dead_money(15, 105.0, 100.0, 10.0, p)      # +0.5R: stays
+    assert not is_dead_money(14, 90.0, 100.0, 10.0, p)       # too early
+    assert not trail_active(109.0, 100.0, 10.0, p) and trail_active(110.0, 100.0, 10.0, p)
+    assert entry_ran(105.1, 100.0, p) and not entry_ran(104.9, 100.0, p)
+    off = StrategyParams()
+    assert not is_dead_money(999, 0.0, 100.0, 10.0, off) and trail_active(0, 100, 10, off)
+
+
+def test_backtest_dead_money_exits():
+    data = {"BTCUSDT": synthetic(900, seed=8), "ETHUSDT": synthetic(900, seed=9)}
+    p = StrategyParams(regime_ema=50, timeout_days=10, timeout_min_r=0.5)
+    res = run_backtest(data, p, RiskParams())
+    timeouts = [t for t in res.trades if t.reason == "timeout"]
+    assert timeouts and all((t.closed - t.opened).days >= 10 for t in timeouts)
+    assert all(t.r_multiple < 0.5 for t in timeouts)
+
+
+def test_settings_edit_keeps_comments(tmp_path):
+    from deskbot import settings_edit
+    from deskbot.config import ROOT
+    cfg = tmp_path / "config.toml"
+    cfg.write_text((ROOT / "config.toml").read_text(encoding="utf-8"), encoding="utf-8")
+    ch = settings_edit.validate({"strategy.timeout_days": 20, "risk.risk_per_trade": 0.015})
+    settings_edit.write(ch, cfg)
+    text = cfg.read_text(encoding="utf-8")
+    assert "timeout_days = 20" in text and "risk_per_trade = 0.015" in text
+    assert text.count("#") == (ROOT / "config.toml").read_text(encoding="utf-8").count("#")
+    s = load_settings(cfg)
+    assert all(sl.params.timeout_days == 20 for sl in s.sleeves) and s.risk.risk_per_trade == 0.015
+    with pytest.raises(ValueError):
+        settings_edit.validate({"strategy.timeout_days": 999})
+    with pytest.raises(ValueError):
+        settings_edit.validate({"broker.kind": 1})
+
+
+def test_phone_token_auth(monkeypatch, tmp_path):
+    """Requests from this PC pass; anything else needs the phone token."""
+    from deskbot import dashboard, phone
+    monkeypatch.setattr(phone, "TOKEN_FILE", tmp_path / "phone_token.txt")
+    tok = phone.token()
+    assert len(tok) >= 30 and phone.token() == tok
+    h = dashboard.Handler.__new__(dashboard.Handler)
+    h.client_address, h.headers = ("192.168.1.50", 50000), {}
+    assert not h._authed()
+    h.headers = {"X-Desk-Token": "wrong"}
+    assert not h._authed()
+    h.headers = {"X-Desk-Token": tok}
+    assert h._authed()
+    h.client_address, h.headers = ("127.0.0.1", 50000), {}
+    assert h._authed()
+    new = phone.rotate()
+    h.client_address, h.headers = ("192.168.1.50", 50000), {"X-Desk-Token": tok}
+    assert new != tok and not h._authed()
+
+
+def test_phone_password_and_lockout(monkeypatch, tmp_path):
+    from deskbot import phone
+    monkeypatch.setattr(phone, "PASSWORD_FILE", tmp_path / "phone_password.json")
+    assert not phone.password_info()["set"] and not phone.check_password("anything")
+    with pytest.raises(ValueError):
+        phone.set_password("12345")
+    phone.set_password("correto-cavalo")
+    raw = (tmp_path / "phone_password.json").read_text(encoding="utf-8")
+    assert "correto-cavalo" not in raw and phone.password_info()["set"]
+    assert phone.check_password("correto-cavalo") and not phone.check_password("errado1")
+    g = phone.LoginGuard(max_fails=3, lock_s=60)
+    for _ in range(2):
+        g.failed("1.2.3.4")
+    assert g.wait("1.2.3.4") == 0
+    g.failed("1.2.3.4")
+    assert g.wait("1.2.3.4") > 0 and g.wait("5.6.7.8") == 0
+    g.ok("1.2.3.4")
+    assert g.wait("1.2.3.4") == 0
+
+
+def _memedesk(monkeypatch, tmp_path):
+    from deskbot import memetest
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    monkeypatch.setattr(memetest.MemeTest, "_pairs", lambda self, pools, session=None: {})  # no network
+    return memetest, memetest.MemeTest(30, 1000)
+
+
+def _pool(buyers, buys, vol_m5, vol_h1, h1=5.0, m5=0.0, liq=100_000.0, price=1.0):
+    return {"attributes": {"name": "X / SOL", "reserve_in_usd": str(liq), "base_token_price_usd": str(price),
+                           "volume_usd": {"m5": vol_m5, "h1": vol_h1},
+                           "price_change_percentage": {"h1": h1, "m5": m5},
+                           "transactions": {"h1": {"buyers": buyers, "buys": buys, "sells": 100}, "m5": {"buys": 5, "sells": 5}}}}
+
+
+def test_meme_analyst_is_strict(monkeypatch, tmp_path):
+    _, t = _memedesk(monkeypatch, tmp_path)
+    t.analyst("bots", _pool(buyers=60, buys=1500, vol_m5=10_000, vol_h1=100_000), "BOTS", "m1")
+    t.analyst("fading", _pool(buyers=300, buys=900, vol_m5=1_000, vol_h1=100_000), "FADE", "m2")
+    t.analyst("chasing", _pool(buyers=300, buys=900, vol_m5=10_000, vol_h1=100_000, m5=12), "CHASE", "m3")
+    t.analyst("good", _pool(buyers=300, buys=900, vol_m5=10_000, vol_h1=100_000), "GOOD", "m4")
+    assert [r["coin"] for r in t.ready] == ["GOOD"]
+    assert t.d.seen["bots"] == t.d.seen["fading"] == t.d.seen["chasing"] == "analyst"
+
+
+def test_meme_executor_buys_best_score_first(monkeypatch, tmp_path):
+    _, t = _memedesk(monkeypatch, tmp_path)
+    bought = []
+    monkeypatch.setattr(t, "executor", lambda addr, pool, coin, mint, score: bought.append(coin))
+    now = "2099-01-01T00:00:00+00:00"
+    t.ready = [{"score": 72, "since": now, "addr": "a", "pool": {}, "coin": "A", "mint": ""},
+               {"score": 95, "since": now, "addr": "b", "pool": {}, "coin": "B", "mint": ""}]
+    t.execute_best()
+    t.execute_best()  # too soon: one buy every 2 minutes
+    assert bought == ["B"]
+    t.last_buy = 0
+    t.execute_best()
+    assert bought == ["B", "A"]
+
+
+def test_meme_risk_exits(monkeypatch, tmp_path):
+    memetest, t = _memedesk(monkeypatch, tmp_path)
+    now = memetest._now().isoformat()
+    for pid in ("stop", "trail", "hold"):
+        t.d.positions.append(memetest.Position(pid, pid, pid, pid, "m", now, 1.0, 1.02, 50, 51, 100_000, 1.0, 1.0))
+    t.d.cash -= 153
+    t._apply_risk({"stop": {"priceUsd": "0.93", "liquidity": {"usd": 100_000}},
+                   "trail": {"priceUsd": "1.30", "liquidity": {"usd": 100_000}},
+                   "hold": {"priceUsd": "1.05", "liquidity": {"usd": 100_000}}}, final=False)
+    assert [p.id for p in t.d.positions] == ["trail", "hold"] and t.d.trades[0]["reason"].startswith("stop")
+    t._apply_risk({"trail": {"priceUsd": "1.14", "liquidity": {"usd": 100_000}},
+                   "hold": {"priceUsd": "1.05", "liquidity": {"usd": 500}}}, final=False)
+    assert [tr["reason"] for tr in t.d.trades] == ["stop -6%", "trailing stop", "liquidez retirada"]
+    assert not t.d.positions
+
+
+def test_futures_desk_goes_long_and_short_without_lookahead():
+    from deskbot import futures as F
+    idx = pd.date_range("2021-01-01", periods=900, freq="4h")
+    up = np.r_[np.linspace(100, 200, 450), np.linspace(200, 90, 450)]
+    rng = np.random.default_rng(1)
+    close = up * (1 + rng.normal(0, 0.004, 900))
+    df = pd.DataFrame({"open": close, "high": close * 1.004, "low": close * 0.996, "close": close, "volume": 1.0}, index=idx)
+    p = F.FutParams(slow_ema=100)
+    a = F.signals(df.iloc[:600], p)[["long", "short"]]
+    b = F.signals(df, p)[["long", "short"]].iloc[:600]
+    pd.testing.assert_frame_equal(a, b)          # future candles never change past signals
+    res = F.backtest({"BTCUSDT": (df, pd.Series(dtype=float))}, p, 10_000)
+    sides = {t["side"] for t in res["trades"]}
+    assert sides == {1, -1}                       # it trades both ways
+    assert res["equity"].iloc[-1] > 0
+
+
+def test_stocks_shelter_can_fill_several_slots():
+    from collections import Counter
+    from deskbot import stocks as S
+    idx = pd.bdate_range("2015-01-01", periods=400)
+    falling = pd.Series(np.linspace(200, 100, 400), index=idx)
+    rising = pd.Series(np.linspace(100, 200, 400), index=idx)
+    closes = pd.DataFrame({s: falling for s in S.RISK} | {"GLD": rising, "TLT": falling})
+    want = S.ranking(closes, 399, S.StockParams(top=3, universe=tuple(S.RISK)))
+    assert Counter(want) == Counter({"GLD": 3})   # nothing in trend but gold: all three slots in gold
+
+
+def test_stocks_desk_without_stop_keeps_a_losing_position(monkeypatch, tmp_path):
+    """stop = 0 means no stop: a small loss must not sell (bug found on the first live day)."""
+    from deskbot import paperdesk, stocks as S
+    monkeypatch.setattr(paperdesk, "DESKS_DIR", tmp_path)
+    monkeypatch.setattr(paperdesk, "eur_usd", lambda: 1.0)
+    idx = pd.bdate_range("2020-01-01", periods=300)
+    up = pd.DataFrame({"open": np.linspace(100, 200, 300), "high": np.linspace(101, 201, 300),
+                       "low": np.linspace(99, 199, 300), "close": np.linspace(100, 200, 300)}, index=idx)
+    monkeypatch.setattr(S, "load", lambda refresh=True: {s: up for s in S.NAMES})
+    desk = S.StocksDesk()
+    desk.step()
+    assert [q["symbol"] for q in desk.L.positions] == ["SPY"]
+    dip = up.copy()
+    dip.iloc[-1, dip.columns.get_loc("close")] = 199.0   # a 0.5% dip
+    monkeypatch.setattr(S, "load", lambda refresh=True: {s: dip for s in S.NAMES})
+    desk2 = S.StocksDesk()
+    desk2.step()
+    assert [q["symbol"] for q in desk2.L.positions] == ["SPY"] and not desk2.L.trades
+
+
+def test_requests_through_the_https_proxy_are_not_trusted(monkeypatch, tmp_path):
+    """On the server every request reaches the dashboard from 127.0.0.1 via the proxy: it must still need the key."""
+    from deskbot import dashboard, phone
+    monkeypatch.setattr(phone, "TOKEN_FILE", tmp_path / "phone_token.txt")
+    tok = phone.token()
+    h = dashboard.Handler.__new__(dashboard.Handler)
+    h.client_address = ("127.0.0.1", 50000)
+    h.headers = {"X-Forwarded-For": "203.0.113.9"}
+    assert not h._local() and not h._authed() and h._client_ip() == "203.0.113.9"
+    h.headers = {"X-Forwarded-For": "203.0.113.9", "X-Desk-Token": tok}
+    assert h._authed()
+
+
+def test_login_guard_locks_everyone_after_many_failures():
+    from deskbot import phone
+    g = phone.LoginGuard(max_fails=5, lock_s=60, global_fails=6)
+    for i in range(6):
+        g.failed(f"10.0.0.{i}")          # one wrong guess each from 6 addresses
+    assert g.wait("10.0.0.99") > 0       # a new address is locked out too
+
+
+def test_memes_mode_buys_only_when_all_five_agree(monkeypatch, tmp_path):
+    """TRENDS → SMARTS → DEBATE → ROUTER → EXEC: one 'no' stops the coin (no network in this test)."""
+    from datetime import datetime, timezone
+    from deskbot import memetest, memedesk
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    desk = memedesk.MemesDesk(30, 110)
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    whales = [{"attributes": {"block_timestamp": now, "kind": "buy", "tx_from_address": f"w{i}",
+                              "volume_in_usd": "900"}} for i in range(4)]
+    info = {"data": {"attributes": {"holders": {"distribution_percentage": {"top_10": "12"}}, "is_honeypot": "no"}}}
+    monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": whales} if "/trades" in path else info)
+    monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": None, "freezeAuthority": None, "decimals": 6})
+    fresh = {"priceUsd": "0.01", "liquidity": {"usd": 250_000}, "volume": {"m5": 9_000, "h1": 90_000},
+             "priceChange": {"m5": -2, "h1": 10}}
+    monkeypatch.setattr(desk, "_pairs", lambda pools, session=None: {p: fresh for p in pools})
+    monkeypatch.setattr(desk, "sol_usd", lambda: 150.0)
+    monkeypatch.setattr(desk, "quote", lambda a, b, amount, session=None: {"outAmount": "1000000000", "priceImpactPct": "0.004",
+                                                                          "routePlan": [{"swapInfo": {"label": "Meteora"}}]})
+    pool = {"attributes": {"name": "DEEP / SOL", "reserve_in_usd": "250000", "base_token_price_usd": "0.01",
+                           "transactions": {"h1": {"buyers": 300, "buys": 900, "sells": 400}},
+                           "volume_usd": {"m5": 9000, "h1": 90000}, "price_change_percentage": {"m5": -2, "h1": 10}},
+            "relationships": {"base_token": {"data": {"id": "solana_MINT1"}}}}
+    desk.auditor("POOL1", pool, "$DEEP")
+    assert [r["coin"] for r in desk.ready] == ["$DEEP"]
+    assert any(e["agent"] == "CORE" and "5/5" in e["reason"] for e in desk.d.events)
+    # whales selling: SMARTS says no and nothing else runs
+    sellers = [{"attributes": {**w["attributes"], "kind": "sell"}} for w in whales]
+    monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": sellers} if "/trades" in path else info)
+    desk.auditor("POOL2", pool, "$BRICK")
+    assert desk.d.seen["POOL2"] == "smarts" and len(desk.ready) == 1

@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Desk Bot">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-180.png">
+<title>AI Desk Bot</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#000;--card:#1c1c1e;--card-2:#2c2c2e;--sep:rgba(84,84,88,.55);
+  --t1:#fff;--t2:rgba(235,235,245,.6);--t3:rgba(235,235,245,.45);
+  --green:#00d35a;--red:#ff453a;--orange:#ff9f0a;--cyan:#64d2ff;--blue:#0a84ff;--yellow:#ffd60a;--pink:#ff6b9a;--purple:#bf5af2;--grey:#8e8e93;
+  --display:-apple-system,"SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --text:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.4 var(--text);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+body{padding:calc(var(--top) + 6px) 0 calc(var(--bottom) + 72px);overscroll-behavior-y:contain}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:8px}
+a{color:var(--blue);text-decoration:none}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+[hidden]{display:none!important}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}
+
+/* navbar */
+.nav{display:flex;align-items:center;justify-content:space-between;height:48px}
+.who{display:flex;align-items:center;gap:9px;font-weight:650;font-size:17px;min-height:44px}
+.who img{width:30px;height:30px;border-radius:9px}
+.who .chev{color:var(--t3);font-weight:400}
+.icon-btn{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;position:relative}
+.icon-btn svg{width:23px;height:23px}
+.bell-dot{position:absolute;top:10px;right:11px;width:9px;height:9px;border-radius:50%;background:var(--green);border:2px solid var(--bg)}
+.offline{margin:4px 16px 0;padding:8px 12px;border-radius:12px;background:rgba(255,69,58,.14);color:var(--red);font-size:13px}
+
+/* balance */
+.bal{font:700 clamp(46px,15vw,72px)/1.05 var(--display);letter-spacing:-.02em;margin-top:6px;display:flex;white-space:nowrap}
+.dg{display:inline-block;height:1.05em;overflow:hidden;position:relative}
+.dg .col{display:flex;flex-direction:column;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+.dg .col span{height:1.05em;display:block}
+.instant .dg .col{transition:none}
+.chg{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;font-weight:600;font-size:15px;min-height:28px}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-weight:700;font-size:13px}
+.pill.mult{background:rgba(0,211,90,.16);color:var(--green);border:1.5px solid var(--green)}
+.pill.mult.neg{background:rgba(255,69,58,.14);color:var(--red);border-color:var(--red)}
+.pill.paper{background:var(--orange);color:#1f1300}
+.when{color:var(--t2);font-size:13px;font-weight:500}
+
+/* chart */
+.chart{position:relative;margin:14px -16px 0;height:210px;touch-action:pan-y}
+.chart canvas{display:block;width:100%;height:100%}
+.chart .empty{position:absolute;left:16px;right:16px;bottom:56px;text-align:center;color:var(--t2);font-size:14px}
+.ranges{display:flex;justify-content:space-between;margin:8px 0 4px}
+.ranges button{min-width:56px;min-height:44px;border-radius:999px;font-weight:700;font-size:14px;color:var(--green)}
+.ranges button[aria-pressed="true"]{background:var(--green);color:#000}
+
+/* sections */
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;margin:22px 0 10px}
+.sec-h h2{margin:0;font:700 22px/1.2 var(--display)}
+.sec-h button,.sec-h span{color:var(--green);font-weight:600;font-size:15px}
+.sec-h button{min-height:44px;padding:0 4px}
+.carousel{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px;padding:0 16px 4px;scrollbar-width:none}
+.carousel::-webkit-scrollbar{display:none}
+.acard{flex:0 0 min(46%,200px);min-height:186px;background:var(--card);border-radius:20px;padding:12px;scroll-snap-align:start;display:flex;flex-direction:column;gap:6px;text-align:left}
+.acard .h{display:flex;align-items:center;gap:8px}
+.acard .h b{font-size:15px}
+.acard .st{font-size:12px;color:var(--t2);display:flex;align-items:center;gap:5px}
+.acard .st i{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
+.acard .st i.pause{background:var(--orange)}.acard .st i.idle{background:var(--grey)}
+.feed-mini{list-style:none;margin:2px 0 0;padding:0;display:grid;gap:5px;font-size:12px}
+.feed-mini li{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.feed-mini .k{color:var(--t3);text-decoration:line-through;text-decoration-color:var(--red);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feed-mini .ok{color:var(--t1)}
+.feed-mini .r{font-family:var(--mono);font-size:10.5px;color:var(--red);text-align:right;white-space:nowrap}
+.feed-mini .g{font-family:var(--mono);font-size:10.5px;color:var(--green)}
+.strips{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:4px 0}
+.strips i{height:7px;border-radius:4px;background:var(--card-2)}
+.strips i.ok{background:var(--green)}.strips i.fail{background:var(--red)}.strips i.off{background:transparent;border:1px dashed var(--t3)}
+.mono{font-family:var(--mono);font-size:11.5px}
+.tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-family:var(--mono);font-size:11px;border-radius:7px;padding:2px 7px;background:var(--card-2);color:var(--t2)}
+.tag.red{color:var(--red);background:rgba(255,69,58,.14)}.tag.green{color:var(--green);background:rgba(0,211,90,.14)}
+.dots{display:flex;justify-content:center;gap:6px;margin-top:8px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--t3)}
+.dots i.on{background:var(--t1)}
+.big{font:700 26px/1.1 var(--display)}
+.mt{display:block;width:100%;text-align:left;background:var(--card);border-radius:20px;padding:14px;margin-top:18px}
+.mt .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mt .top b{font-size:16px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--green)}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.2s ease-in-out infinite alternate}
+.live.done{color:var(--t2)}.live.done i{background:var(--grey);animation:none}
+.mt .val{font:700 30px/1.1 var(--display);margin-top:8px}
+.mt .stats{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--t2);margin-top:6px}
+.mt svg.spark{display:block;width:100%;height:48px;margin-top:8px}
+.mt .ev svg{flex:none}
+.mt .ev{margin-top:10px;border-top:.5px solid var(--sep);padding-top:8px;display:grid;gap:6px;font-size:13px}
+.mt .ev div{display:flex;gap:8px;align-items:center;min-width:0}
+.mt .ev span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t2)}
+.sheet h3{font:700 18px var(--display);margin:14px 4px 6px}
+
+/* activity rows */
+.rows{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 0;border-bottom:.5px solid var(--sep);min-height:60px}
+.row:last-child{border-bottom:0}
+.row .ti{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .su{font-size:13px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .va{text-align:right;font-weight:600}
+.row .va small{display:block;font-size:13px;font-weight:500;color:var(--t2)}
+.ava{width:40px;height:40px;position:relative}
+.ava .mini{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--bg);font-size:10px;font-weight:800;color:#000}
+.coin{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--card-2)}
+.dec{font-weight:700;font-size:13px;border-radius:7px;padding:2px 8px}
+.dec.COMPRA{color:var(--green);background:rgba(0,211,90,.14)}.dec.ESPERA{color:var(--orange);background:rgba(255,159,10,.14)}.dec.PASA{color:var(--red);background:rgba(255,69,58,.14)}
+.empty-box{color:var(--t2);text-align:center;padding:26px 12px;background:var(--card);border-radius:16px;font-size:14px}
+
+/* agents tab */
+.view-h{font:700 30px/1.15 var(--display);margin:6px 0 4px}
+.view-sub{color:var(--t2);margin:0 0 14px;font-size:14px}
+.fcard{background:var(--card);border-radius:20px;padding:14px;margin-bottom:12px}
+.fcard .h{display:flex;align-items:center;gap:10px}
+.fcard .h .nm{font-weight:700;font-size:17px}
+.fcard .h .meta{font-size:12.5px;color:var(--t2)}
+.fcard .h .end{margin-left:auto}
+.fcard p{margin:8px 0 0;color:var(--t2);font-size:14px}
+.fcard .list{margin-top:10px;border-top:.5px solid var(--sep)}
+.li{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:.5px solid var(--sep);font-size:14px}
+.li:last-child{border-bottom:0}
+.li .r{color:var(--t2);text-align:right;font-size:13px}
+.switch{width:51px;height:31px;border-radius:999px;background:var(--card-2);position:relative;flex:none;transition:background .2s}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+.switch::before{content:"";position:absolute;inset:-7px -6px}
+.switch[aria-checked="true"]{background:var(--green)}
+.switch[aria-checked="true"]::after{left:22px}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:12px;border-top:.5px solid var(--sep);min-height:44px}
+.chips{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 10px;padding:0 16px;scrollbar-width:none}
+.chips button{flex:none;min-height:44px;padding:0 14px;border-radius:999px;background:var(--card);color:var(--t2);font-weight:600;font-size:14px}
+.chips button[aria-pressed="true"]{background:var(--t1);color:#000}
+
+/* account */
+.group{background:var(--card);border-radius:14px;margin-bottom:16px;overflow:hidden}
+.group .li{padding:12px 14px;margin:0;border-bottom:.5px solid var(--sep);min-height:46px;align-items:center}
+.group-h{color:var(--t2);font-size:13px;text-transform:none;margin:0 4px 6px}
+.lnk{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;min-height:46px;border-bottom:.5px solid var(--sep);color:var(--t1);width:100%;text-align:left}
+.lnk:last-child{border-bottom:0}
+.lnk .chev{color:var(--t3)}
+
+/* tab bar */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:10;display:grid;grid-template-columns:repeat(4,1fr);padding:6px 6px calc(var(--bottom) + 6px);background:rgba(18,18,18,.82);-webkit-backdrop-filter:blur(20px) saturate(1.6);backdrop-filter:blur(20px) saturate(1.6);border-top:.5px solid var(--sep)}
+.tabbar button{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:48px;color:var(--t2);font-size:11px;font-weight:600}
+.tabbar button svg{width:25px;height:25px}
+.tabbar button[aria-selected="true"]{color:var(--t1)}
+
+/* sheet */
+.sheet-bg{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:86vh;overflow:auto;background:#121212;border-radius:22px 22px 0 0;padding:8px 14px calc(var(--bottom) + 18px)}
+.grab{width:38px;height:5px;border-radius:3px;background:var(--t3);margin:4px auto 10px}
+.note{display:grid;grid-template-columns:44px minmax(0,1fr) 14px;gap:12px;align-items:center;padding:11px 10px;border-radius:16px}
+.note:first-of-type{background:var(--card)}
+.note b{display:block;font-size:16px}
+.note span{color:var(--t2);font-size:14px}
+.note .ud{width:9px;height:9px;border-radius:50%;background:var(--blue)}
+.note .tm{font-size:12px;color:var(--t3)}
+
+/* skeleton + lock */
+.sk{background:var(--card);border-radius:12px;animation:pulse 1.2s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.5}to{opacity:1}}
+.lock{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;justify-content:center;padding:32px;gap:12px;text-align:center}
+.lock h1{font:700 26px var(--display);margin:0}
+.lock form{width:100%;max-width:340px;margin:8px auto 0;text-align:left}
+.field{width:100%;min-height:50px;border-radius:12px;border:1px solid var(--sep);background:var(--card);color:var(--t1);padding:0 14px;font:inherit;font-size:17px}
+.field:focus{outline:2px solid var(--blue);outline-offset:1px}
+.btn-main{width:100%;min-height:50px;border-radius:14px;background:var(--green);color:#000;font-weight:700;font-size:17px;margin-top:12px}
+.btn-main:disabled{opacity:.5}
+.msg{min-height:20px;margin:10px 0 0;color:var(--red);font-size:14px}
+.msg.ok{color:var(--green)}
+@media (prefers-reduced-motion:reduce){.dg .col,.switch,.switch::after{transition:none}.sk{animation:none}}
+</style>
+</head>
+<body>
+<div id="offline" class="offline" role="status" hidden></div>
+
+<!-- ============ HOME ============ -->
+<section id="v-home" class="view">
+  <div class="wrap">
+    <div class="nav">
+      <button class="who" data-go="account" aria-label="Conta"><img src="/icon-180.png" alt="">AI Desk Bot <span class="chev">›</span></button>
+      <button class="icon-btn" id="bell" aria-label="Notificações dos agentes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="bell-dot" id="bell-dot" hidden></span>
+      </button>
+    </div>
+    <div id="home-skel"><div class="sk" style="height:66px;width:78%;margin-top:8px"></div><div class="sk" style="height:22px;width:55%;margin-top:10px"></div><div class="sk" style="height:200px;margin-top:16px"></div></div>
+    <div id="home-main" hidden>
+      <div class="bal" id="bal" aria-live="off"></div>
+      <div class="chg" id="chg"></div>
+      <div class="chart" id="chart"><canvas id="cv" aria-label="Capital ao longo do tempo" role="img"></canvas><div class="empty" id="chart-empty" hidden>À espera do primeiro trade</div></div>
+      <div class="ranges" role="group" aria-label="Período do gráfico">
+        <button data-r="1D">1D</button><button data-r="1S">1S</button><button data-r="1M">1M</button><button data-r="3M">3M</button><button data-r="TUDO">TUDO</button>
+      </div>
+      <div id="mt-card"></div>
+      <div class="sec-h"><h2>Agentes</h2><span id="running"></span></div>
+      <div class="carousel" id="carousel" aria-label="Agentes"></div>
+      <div class="dots" id="dots" aria-hidden="true"></div>
+      <div class="sec-h"><h2>Atividade</h2><button data-go="activity">Ver tudo</button></div>
+      <ul class="rows" id="act-mini"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AGENTS ============ -->
+<section id="v-agents" class="view" hidden>
+  <div class="wrap">
+    <div class="nav"><span class="who">Agentes</span></div>
+    <h1 class="view-h" id="ag-title">9 agentes</h1>
+    <p class="view-sub">Pela ordem em que uma moeda passa por eles. A IA só pode vetar ou encolher um trade.</p>
+    <div id="ag-list"></div>
+  </div>
+</section>
+
+<!-- ============ ACTIVITY ============ -->
+<section id="v-activity" class="view" hidden>
+  <div class="wrap">
+    <div class="nav"><span class="who">Atividade</span></div>
+    <div class="chips" role="group" aria-label="Filtro">
+      <button data-f="all" aria-pressed="true">Tudo</button><button data-f="trades" aria-pressed="false">Trades</button><button data-f="desk" aria-pressed="false">Mesa</button><button data-f="cut" aria-pressed="false">Auditor</button>
+    </div>
+    <ul class="rows" id="act-all"></ul>
+  </div>
+</section>
+
+<!-- ============ ACCOUNT ============ -->
+<section id="v-account" class="view" hidden>
+  <div class="wrap">
+    <div class="nav"><span class="who">Conta</span></div>
+    <div id="acc"></div>
+  </div>
+</section>
+
+<nav class="tabbar" role="tablist" aria-label="Secções">
+  <button role="tab" data-tab="home" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Início</button>
+  <button role="tab" data-tab="agents" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.2a5 5 0 0 1 5.5 4.8"/></svg>Agentes</button>
+  <button role="tab" data-tab="activity" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg>Atividade</button>
+  <button role="tab" data-tab="account" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Conta</button>
+</nav>
+
+<div class="sheet-bg" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Notificações dos agentes">
+    <div class="grab" aria-hidden="true"></div>
+    <div id="notes"></div>
+  </div>
+</div>
+
+<div class="lock" id="lock" hidden>
+  <img src="/icon-180.png" alt="" style="width:72px;height:72px;border-radius:18px;margin:0 auto">
+  <h1>AI Desk Bot</h1>
+  <form id="login" hidden autocomplete="on">
+    <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
+    <label for="pw" class="t2" style="display:block;margin-bottom:8px">Password</label>
+    <input class="field" id="pw" name="password" type="password" autocomplete="current-password" required minlength="6" enterkeyhint="go">
+    <button class="btn-main" type="submit" id="login-btn">Entrar</button>
+    <p class="msg" id="login-msg" role="alert"></p>
+  </form>
+  <p class="t2" id="lock-nopw" hidden>Ainda não há password. Define uma no PC (painel → <b>Telemóvel</b>) ou no Safari onde já entraste pelo QR code (<b>Conta</b> → <b>Password da app</b>).</p>
+  <p class="t3" style="font-size:13px">Também entra pelo QR code do botão <b>Telemóvel</b> no painel do PC.</p>
+</div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const nf = (d = 2) => { try { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: "always"}); } catch (e) { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d}); } };
+const money = v => v == null ? "—" : "$" + nf(2).format(v);
+const smoney = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + "$" + nf(2).format(Math.abs(v));
+const pct = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(d).format(Math.abs(v * 100)) + "%";
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+               set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+               del: k => { try { localStorage.removeItem(k); } catch (e) {} }};
+function hhmm(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso), now = new Date();
+  const t = d.toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"});
+  if (d.toDateString() === now.toDateString()) return t;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "ontem " + t;
+  return d.toLocaleDateString("pt-PT", {day: "2-digit", month: "2-digit"}) + " " + t;
+}
+
+/* ------------------------------------------------------------------ token */
+(function () {
+  const m = location.hash.match(/t=([A-Za-z0-9_-]+)/);
+  if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); }
+})();
+let TOKEN = store.get("deskbot-token") || "";
+async function api(path, opts = {}) {
+  let r;
+  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {"X-Desk-Token": TOKEN} : {});
+  try { r = await fetch(path, Object.assign({}, opts, {headers})); }
+  catch (e) { const err = new Error("sem ligação"); err.offline = true; throw err; }
+  if (r.status === 401) { showLock(); const err = new Error("sem chave"); err.locked = true; throw err; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+/* ------------------------------------------------------------------ lock screen: password login */
+async function showLock() {
+  $("#lock").hidden = false;
+  let hasPw = false;
+  try { hasPw = (await (await fetch("/api/login")).json()).password_set; } catch (e) {}
+  $("#login").hidden = !hasPw;
+  $("#lock-nopw").hidden = hasPw;
+  if (hasPw) setTimeout(() => $("#pw").focus(), 50);
+}
+$("#login").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("#login-btn"), msg = $("#login-msg");
+  btn.disabled = true; msg.className = "msg"; msg.textContent = "";
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("#pw").value})});
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok || !body.token) throw new Error(body.error || "Não deu para entrar.");
+    TOKEN = body.token; store.set("deskbot-token", TOKEN);
+    $("#pw").value = ""; $("#lock").hidden = true;
+    await load();
+  } catch (err) { msg.textContent = err.message === "Failed to fetch" ? "Sem ligação ao PC. Estás no Wi-Fi de casa?" : err.message; }
+  btn.disabled = false;
+});
+
+/* ------------------------------------------------------------------ agent icons (own simple shapes) */
+const AG = {
+  Bot: {c: "#00d35a"}, Scout: {c: "#64d2ff", s: "star"}, Auditor: {c: "#8e8e93", s: "hex"}, Charts: {c: "#ff9f0a", s: "square"},
+  Analyst: {c: "#ffd60a", s: "tri"}, News: {c: "#0a84ff", s: "square"}, Sentimento: {c: "#bf5af2", s: "blob"},
+  "Cético": {c: "#ff453a", s: "diamond"}, Chefe: {c: "#ff9f0a", s: "circle"}, Executor: {c: "#00d35a", s: "blob"}, Risk: {c: "#ff6b9a", s: "shield"},
+};
+const SHAPES = {
+  star: "M20 2l4.2 7.6 8.4-1.8-3.4 7.9 6 6.1-8.5 1.2-.7 8.6L20 26.8l-6 4.8-.7-8.6-8.5-1.2 6-6.1-3.4-7.9 8.4 1.8z",
+  hex: "M20 3l14 8v16l-14 8-14-8V11z", tri: "M20 4c1.4 0 2.6.8 3.3 2l12 21c1.5 2.6-.4 6-3.4 6H8.1c-3 0-4.9-3.4-3.4-6l12-21c.7-1.2 1.9-2 3.3-2z",
+  square: "M10 5h20a5 5 0 0 1 5 5v20a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5z", circle: "M20 4a16 16 0 1 1 0 32 16 16 0 0 1 0-32z",
+  blob: "M12 10a9 9 0 0 1 16 0 8 8 0 0 1 4 14 8 8 0 0 1-8 10H14a8 8 0 0 1-8-10 8 8 0 0 1 6-14z",
+  diamond: "M20 3l16 17-16 17L4 20z", shield: "M20 3l14 5v11c0 9-6 14-14 18C12 33 6 28 6 19V8z",
+};
+function agentIcon(id, size = 40) {
+  if (id === "Bot") return `<img src="/icon-180.png" alt="" width="${size}" height="${size}" style="border-radius:${size * .28}px">`;
+  const a = AG[id] || {c: "#8e8e93", s: "circle"};
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><path d="${SHAPES[a.s]}" fill="${a.c}"/><ellipse cx="15.5" cy="19" rx="3.2" ry="4" fill="#fff"/><ellipse cx="24.5" cy="19" rx="3.2" ry="4" fill="#fff"/><circle cx="16.2" cy="20" r="1.7" fill="#000"/><circle cx="25.2" cy="20" r="1.7" fill="#000"/></svg>`;
+}
+
+/* ------------------------------------------------------------------ state + navigation */
+const S = {d: null, tab: "home", range: store.get("deskbot-range") || "TUDO", filter: "all", lastOk: null, scrub: null};
+function showTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll(".tabbar [role=tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+  document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== "v-" + tab);
+  window.scrollTo(0, 0);
+  if (S.d) render();
+}
+document.querySelectorAll(".tabbar [role=tab]").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if (g) showTab(g.dataset.go); });
+
+let offTimer = null;
+const eur = v => v == null ? "—" : nf(2).format(v) + " €";
+const seur = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(2).format(Math.abs(v)) + " €";
+async function loadMeme() {
+  try { S.mt = await api("/api/memetest"); } catch (e) { S.mt = null; }
+  renderMeme();
+}
+const EV_TXT = {kill: "cortada", cut: "cortada", reject: "rejeitada", skip: "saltada", pass: "passou", buy: "", sell: "", wait: "à espera"};
+function evLine(e) { const v = EV_TXT[e.verdict] ?? e.verdict; return `${e.coin} · ${v ? v + " · " : ""}${e.reason}`; }
+function renderMeme() {
+  const m = S.mt, el = $("#mt-card");
+  if (!el) return;
+  if (!m || !m.exists) { el.innerHTML = ""; return; }
+  const diff = m.equity_eur - m.start_eur, up = diff >= 0;
+  const pts = m.curve;
+  let spark = "";
+  if (pts.length > 1) {
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]).concat([m.start_eur]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys) || 1;
+    const X = t => (t - x0) / ((x1 - x0) || 1) * 300, Y = v => 44 - (v - y0) / ((y1 - y0) || 1) * 40;
+    spark = `<svg class="spark" viewBox="0 0 300 48" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="300" y1="${Y(m.start_eur)}" y2="${Y(m.start_eur)}" stroke="rgba(235,235,245,.3)" stroke-dasharray="3 4"/><polyline fill="none" stroke="${up ? "#00d35a" : "#ff453a"}" stroke-width="2" vector-effect="non-scaling-stroke" points="${pts.map(p => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"/></svg>`;
+  }
+  const evs = m.events.filter(e => e.verdict !== "wait").slice(0, 3);
+  el.innerHTML = `<button class="mt" id="mt-open" aria-label="Ver o teste de memecoins">
+    <div class="top"><b>Teste de memecoins · papel</b>${m.running ? `<span class="live"><i></i>a decorrer até ${esc(hhmm(m.ends))}</span>` : `<span class="live done"><i></i>terminado ${esc(hhmm(m.ends))}</span>`}</div>
+    <div class="val">${eur(m.equity_eur)}</div>
+    <div class="stats"><span class="${up ? "up" : "down"}">${seur(diff)} (${pct(m.equity_eur / m.start_eur - 1, 2)})</span><span>início ${eur(m.start_eur)}</span><span>${m.positions.length} abertas</span><span>${m.trades.length} fechadas</span><span>${m.pools_seen || 0} moedas vistas</span></div>
+    ${spark}
+    <div class="ev">${evs.map(e => `<div>${agentIcon(e.agent, 22)}<span>${esc(evLine(e))}</span></div>`).join("") || '<div><span>À espera da primeira moeda…</span></div>'}</div>
+  </button>`;
+  $("#mt-open").onclick = openMeme;
+}
+function openMeme() {
+  const m = S.mt; if (!m) return;
+  const li = (a, b) => `<div class="li"><span>${a}</span><span class="r">${b}</span></div>`;
+  const counts = Object.entries(m.counts || {}).map(([k, c]) => [k, Object.entries(c).sort((a, b) => b[1] - a[1])]).filter(([, c]) => c.length);
+  $("#notes").innerHTML = `<h3>Teste de memecoins</h3>
+    <div class="fcard" style="margin:0"><div class="t2" style="font-size:13px">Dinheiro fictício: nenhuma carteira e nenhuma ordem real. Mesa de 5 agentes como no post do X, com regras e sem IA. Preços do DexScreener a cada 15 s, custo de 1% por lado mais o impacto no pool.</div>
+    <div class="list">${li("Saldo", `<b>${eur(m.equity_eur)}</b>`)}${li("Resultado", `<span class="${m.equity_eur >= m.start_eur ? "up" : "down"}">${seur(m.equity_eur - m.start_eur)}</span>`)}${li("Início", eur(m.start_eur) + " · " + esc(hhmm(m.started)))}${li(m.running ? "Termina" : "Terminou", esc(hhmm(m.ends)))}</div></div>
+    <h3>Posições abertas (${m.positions.length})</h3>
+    ${m.positions.length ? `<div class="group">${m.positions.map(p => li(`<b>${esc(p.coin)}</b> <span class="t3">${esc(hhmm(p.opened))}</span>`, `${eur(p.value_eur)} <span class="${p.pct >= 0 ? "up" : "down"}">${pct(p.pct)}</span>${p.trail_on ? " · trailing" : ""}`)).join("")}</div>` : '<p class="t2" style="margin:0 4px">Nenhuma.</p>'}
+    ${(m.ready || []).length ? `<h3>Na fila do Executor (${m.ready.length})</h3><div class="group">${m.ready.map(r => li(`<b>${esc(r.coin)}</b> <span class="t3">desde ${esc(hhmm(r.since))}</span>`, `nota ${r.score}`)).join("")}</div>` : ""}
+    <h3>Trades fechados (${m.trades.length})</h3>
+    ${m.trades.length ? `<div class="group">${m.trades.map(t => li(`<b>${esc(t.coin)}</b> <span class="t3">${esc(t.reason)}</span>`, `<span class="${t.pnl_eur >= 0 ? "up" : "down"}">${seur(t.pnl_eur)} (${pct(t.pct)})</span>`)).join("")}</div>` : '<p class="t2" style="margin:0 4px">Nenhum ainda.</p>'}
+    <h3>Onde as moedas foram cortadas</h3>
+    ${counts.length ? `<div class="group">${counts.map(([k, c]) => li(`<b>${esc({scanner: "Scanner", auditor: "Auditor", analyst: "Analyst", executor: "Executor"}[k] || k)}</b>`, esc(c.slice(0, 3).map(([r, n]) => `${r} (${n})`).join(", ")))).join("")}</div>` : '<p class="t2" style="margin:0 4px">Nada ainda.</p>'}
+    <h3>O que os agentes fizeram</h3>
+    <div class="group">${m.events.slice(0, 40).map(e => `<div class="li" style="align-items:center;justify-content:flex-start;gap:10px">${agentIcon(e.agent, 26)}<span style="min-width:0"><b>${esc(e.coin)}</b> <span class="t2">${EV_TXT[e.verdict] ? esc(EV_TXT[e.verdict]) + " · " : ""}${esc(e.reason)}</span><br><span class="t3" style="font-size:12px">${esc(e.agent)} · ${esc(hhmm(e.ts))}</span></span></div>`).join("")}</div>`;
+  $("#sheet").hidden = false;
+}
+async function load() {
+  loadMeme();
+  try {
+    S.d = await api("/api/mobile");
+    S.lastOk = Date.now();
+    clearInterval(offTimer); $("#offline").hidden = true;
+    render();
+  } catch (e) {
+    if (e.locked) return;
+    const el = $("#offline"); el.hidden = false;
+    let n = 10;
+    const last = S.lastOk ? new Date(S.lastOk).toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"}) : "—";
+    const paint = () => el.textContent = e.offline ? `Bot sem ligação · nova tentativa em ${n}s · última atualização ${last}` : `Erro: ${e.message}`;
+    paint(); clearInterval(offTimer);
+    offTimer = setInterval(() => { n -= 1; if (n <= 0) { clearInterval(offTimer); load(); } else paint(); }, 1000);
+  }
+}
+setInterval(() => { if (!document.hidden && !S.scrub) load(); }, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+
+function render() {
+  const d = S.d;
+  $("#home-skel").hidden = true; $("#home-main").hidden = false;
+  if (S.tab === "home") renderHome(d);
+  if (S.tab === "agents") renderAgents(d);
+  if (S.tab === "activity") renderActivity(d);
+  if (S.tab === "account") renderAccount(d);
+  const seen = +(store.get("deskbot-seen") || 0);
+  $("#bell-dot").hidden = !d.notes.some(n => n.ts && new Date(n.ts) > seen) && !d.feed.some(f => new Date(f.ts) > seen);
+}
+
+/* ------------------------------------------------------------------ balance odometer */
+function setBalance(v, animate = true) {
+  const el = $("#bal"), s = money(v);
+  el.classList.toggle("instant", !animate || REDUCED);
+  if (el.dataset.fmt !== s.replace(/\d/g, "0")) {
+    el.dataset.fmt = s.replace(/\d/g, "0");
+    el.innerHTML = [...s].map(ch => /\d/.test(ch) ? `<span class="dg"><span class="col">${"0123456789".split("").map(n => `<span>${n}</span>`).join("")}</span></span>` : `<span>${esc(ch)}</span>`).join("");
+    el.setAttribute("aria-label", s);
+  }
+  const digits = [...s].filter(ch => /\d/.test(ch)), cols = el.querySelectorAll(".col");
+  cols.forEach((c, i) => { c.style.transitionDelay = (cols.length - 1 - i) * 30 + "ms"; c.style.transform = `translateY(-${+digits[i] * 1.05}em)`; });
+  el.setAttribute("aria-label", s);
+}
+
+/* ------------------------------------------------------------------ home */
+const RANGE_MS = {"1D": 864e5, "1S": 7 * 864e5, "1M": 30 * 864e5, "3M": 91 * 864e5, TUDO: Infinity};
+function rangePoints(d) {
+  const now = Date.now(), span = RANGE_MS[S.range];
+  const pts = d.curve.filter(p => now - p[0] <= span);
+  if (pts.length < 2 && d.curve.length >= 2 && span !== Infinity) {
+    const before = d.curve.filter(p => now - p[0] > span).pop();
+    if (before) pts.unshift([now - span, before[1]]);
+  }
+  return pts;
+}
+function renderHome(d) {
+  const eq = d.account ? d.account.equity : null;
+  const pts = rangePoints(d);
+  const base = S.range === "TUDO" || !pts.length ? d.start : pts[0][1];
+  if (!S.scrub) {
+    setBalance(eq ?? d.start, true);
+    headerLine(eq, base, null);
+  }
+  document.querySelectorAll(".ranges button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === S.range)));
+  drawChart();
+  const ag = d.agents, paused = d.controls.entries_paused;
+  $("#running").textContent = paused ? "compras em pausa" : `${Object.keys(d.roles).length} a trabalhar`;
+  $("#running").style.color = paused ? "var(--orange)" : "";
+  const cards = agentCards(d), html = cards.join("");
+  if ($("#carousel").dataset.html !== html) {
+    $("#carousel").innerHTML = html;
+    $("#carousel").dataset.html = html;
+    $("#dots").innerHTML = cards.map(() => "<i></i>").join("");
+  }
+  syncDots();
+  $("#act-mini").innerHTML = d.feed.length ? d.feed.slice(0, 5).map(rowHtml).join("") : `<li class="empty-box">Ainda nada. A primeira linha aparece quando o Auditor cortar ou a mesa reunir.</li>`;
+}
+function headerLine(eq, base, when) {
+  const diff = eq != null ? eq - base : null, rel = eq != null && base ? eq / base - 1 : null;
+  const startMult = eq != null ? eq / S.d.start : 1;
+  const up = (diff ?? 0) >= 0;
+  $("#chg").innerHTML = `<span class="${up ? "up" : "down"}">${up ? "▲" : "▼"} ${smoney(diff)} (${pct(rel, 2)})</span>
+    <span class="pill mult ${Math.round(startMult * 100) < 100 ? "neg" : ""}" title="Capital a dividir pelo capital inicial">${nf(2).format(startMult)}×</span>
+    <span class="pill paper" title="Dinheiro fictício">PAPER</span>${when ? `<span class="when">${esc(when)}</span>` : ""}`;
+}
+function syncDots() {
+  const c = $("#carousel"), cards = c.children; if (!cards.length) return;
+  const atEnd = c.scrollLeft + c.clientWidth >= c.scrollWidth - 4;
+  const i = atEnd ? cards.length - 1 : Math.round(c.scrollLeft / (cards[0].offsetWidth + 10));
+  $("#dots").querySelectorAll("i").forEach((x, j) => x.classList.toggle("on", j === Math.min(i, cards.length - 1)));
+}
+$("#carousel").addEventListener("scroll", syncDots, {passive: true});
+document.querySelectorAll(".ranges button").forEach(b => b.addEventListener("click", () => { S.range = b.dataset.r; store.set("deskbot-range", S.range); renderHome(S.d); }));
+
+function agentCards(d) {
+  const ag = d.agents, paused = d.controls.entries_paused, p = d.params;
+  const st = (txt, k = "") => `<div class="st"><i class="${k}"></i>${esc(txt)}</div>`;
+  const head = id => `<div class="h">${agentIcon(id, 28)}<b>${esc(id)}</b></div>`;
+  const scout = d.scout.slice(0, 4).map(c => `<li><span class="${c.passed ? "ok" : "k"}">${esc(c.coin)}</span><span class="${c.passed ? "g" : "r"}">${c.passed ? "→ auditor" : esc(pct(c.near))}</span></li>`).join("");
+  const top = d.scout[0];
+  const strips = top ? top.layers.map(s => `<i class="${s === "skip" ? "" : s}"></i>`).join("") : "";
+  const best = d.best;
+  const ring = (v, min) => {
+    const r = 26, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, (v || 0) / 100));
+    const col = min > 0 ? (v >= min ? "var(--green)" : "var(--red)") : "var(--yellow)";
+    return `<svg width="76" height="76" viewBox="0 0 64 64" role="img" aria-label="Nota ${v == null ? "—" : Math.round(v)} de 100"><circle cx="32" cy="32" r="${r}" fill="none" stroke-width="6" stroke="#2c2c2e"/><circle cx="32" cy="32" r="${r}" fill="none" stroke-width="6" stroke-linecap="round" stroke="${col}" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 32 32)"/><text x="32" y="39" text-anchor="middle" fill="#fff" style="font:700 20px var(--display)">${v == null ? "—" : Math.round(v)}</text></svg>`;
+  };
+  const lastDesk = d.feed.find(f => f.kind === "desk");
+  return [
+    `<button class="acard" data-go="agents">${head("Scout")}${st(`${ag.scout.watching} moedas`, paused ? "pause" : "")}<ul class="feed-mini">${scout}</ul><div class="mono t2" style="margin-top:auto">${ag.scout.signals ? `${ag.scout.signals} com sinal` : "sem sinal hoje"}</div></button>`,
+    `<button class="acard" data-go="agents">${head("Auditor")}${st(`${d.report.total} analisadas`)}${top ? `<div class="mono">${esc(top.coin)}</div><div class="strips" aria-hidden="true">${strips}</div><div class="mono ${top.passed ? "up" : "down"}">${top.passed ? "passou → Charts" : esc(top.reason)}</div>` : ""}<div class="mono t2" style="margin-top:auto">${d.report.total - d.report.passed} cortadas</div></button>`,
+    `<button class="acard" data-go="agents">${head("Analyst")}${st("a dar notas")}<div style="display:grid;place-items:center;flex:1">${ring(best ? best.quality : null, ag.analyst.min_quality)}</div><div class="mono t2">melhor: ${esc(best ? best.coin : "—")}</div></button>`,
+    `<button class="acard" data-go="agents">${head("Chefe")}${st(lastDesk ? "decidiu " + hhmm(lastDesk.ts) : "à espera de sinal", lastDesk ? "" : "idle")}${lastDesk ? `<div class="big" style="font-size:20px">${esc(lastDesk.title.replace("Mesa: ", ""))}</div><span class="dec ${esc(lastDesk.decision)}" style="align-self:flex-start">${esc(lastDesk.decision)}</span>` : `<div class="t2" style="font-size:13px">Só reúne quando uma moeda passa o Auditor.</div>`}</button>`,
+    `<button class="acard" data-go="agents">${head("Executor")}${st(`${ag.executor.buys} compras`, ag.executor.buys ? "" : "idle")}<div class="big">${nf(1).format(ag.executor.risk_per_trade * 100)}%</div><div class="t2" style="font-size:13px">de risco por trade</div><div class="tags" style="margin-top:auto"><span class="tag">teto ${nf(0).format(ag.executor.max_position_pct * 100)}%</span>${ag.executor.gap ? `<span class="tag">fugiu &gt;${nf(0).format(ag.executor.gap * 100)}%: não</span>` : ""}</div></button>`,
+    `<button class="acard" data-go="agents">${head("Risk")}${st(d.positions.length ? "a guardar" : "sem posições", d.positions.length ? "" : "idle")}<div class="big">${d.positions.length}</div><div class="tags" style="margin-top:auto"><span class="tag red">stop −${nf(1).format(p.stop_atr)} ATR</span><span class="tag green">trail ${nf(1).format(p.trail_atr)} ATR</span>${p.timeout_days ? `<span class="tag">${p.timeout_days} d &lt; +${nf(1).format(p.timeout_min_r)}R</span>` : ""}</div></button>`,
+  ];
+}
+
+/* ------------------------------------------------------------------ chart (canvas) */
+function drawChart() {
+  const d = S.d, cv = $("#cv"), box = $("#chart");
+  const W = box.clientWidth, H = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const pts = rangePoints(d);
+  const padL = 16, padR = 16, top = 64, bot = 14;
+  $("#chart-empty").hidden = pts.length >= 2;
+  if (pts.length < 2) {
+    g.strokeStyle = "rgba(235,235,245,.3)"; g.setLineDash([4, 5]); g.beginPath(); g.moveTo(padL, H * .62); g.lineTo(W - padR, H * .62); g.stroke(); g.setLineDash([]);
+    S.geom = null; return;
+  }
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  const base = S.range === "TUDO" ? d.start : pts[0][1];   // same base as the header line
+  let y0 = Math.min(base, ...pts.map(p => p[1])), y1 = Math.max(base, ...pts.map(p => p[1]));
+  if (y1 - y0 < y1 * 0.002) { const m = (y0 + y1) / 2, h = Math.max(m * 0.001, 1); y0 = m - h; y1 = m + h; }
+  const X = t => padL + (t - x0) / ((x1 - x0) || 1) * (W - padL - padR);
+  const Y = v => top + (y1 - v) / (y1 - y0) * (H - top - bot);
+  const up = pts[pts.length - 1][1] >= base, col = up ? "#00d35a" : "#ff453a";
+  // dashed line at the starting value
+  g.strokeStyle = "rgba(235,235,245,.28)"; g.setLineDash([3, 5]); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(padL, Y(base)); g.lineTo(W - padR, Y(base)); g.stroke(); g.setLineDash([]);
+  // fill + line
+  const grad = g.createLinearGradient(0, top, 0, H);
+  grad.addColorStop(0, up ? "rgba(0,211,90,.28)" : "rgba(255,69,58,.24)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1])));
+  g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = grad; g.fill();
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1])));
+  g.strokeStyle = col; g.lineWidth = 2.2; g.lineJoin = "round"; g.lineCap = "round"; g.stroke();
+  // trade marks: label pills above the line, a later one moves up a row when they would overlap
+  const marks = d.trades.filter(t => { const ms = new Date(t.ts).getTime(); return ms >= x0 && ms <= x1; }).slice(-8);
+  const placed = [];
+  g.font = "700 11.5px " + getComputedStyle(document.body).fontFamily;
+  for (const t of marks) {
+    const ms = new Date(t.ts).getTime(), p = nearest(pts, ms), x = X(ms), y = Y(p[1]);
+    const label = t.kind === "buy" ? `Comprou ${t.coin}` : smoney(t.pnl);
+    const c = t.kind === "buy" ? "#0a84ff" : t.kind === "win" ? "#00d35a" : "#ff453a";
+    const w = g.measureText(label).width + 16, h = 22;
+    let row = 0, lx = Math.min(Math.max(x - w / 2, 2), W - w - 2);
+    while (placed.some(r => r.row === row && lx < r.x + r.w + 4 && lx + w + 4 > r.x)) row++;
+    placed.push({row, x: lx, w});
+    const ly = Math.max(2, y - 34 - row * 26);
+    g.strokeStyle = "rgba(235,235,245,.35)"; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(x, ly + h); g.lineTo(x, y - 5); g.stroke(); g.setLineDash([]);
+    g.fillStyle = "#1c1c1e"; g.strokeStyle = c; g.lineWidth = 1.5; roundRect(g, lx, ly, w, h, 11); g.fill(); g.stroke();
+    g.fillStyle = c; g.textBaseline = "middle"; g.fillText(label, lx + 8, ly + h / 2 + .5);
+    g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fillStyle = c; g.fill(); g.strokeStyle = "#000"; g.lineWidth = 2; g.stroke();
+  }
+  // last point
+  const lp = pts[pts.length - 1];
+  g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 4.5, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+  if (S.scrub) {
+    const p = S.scrub;
+    g.strokeStyle = "rgba(235,235,245,.5)"; g.lineWidth = 1; g.beginPath(); g.moveTo(X(p[0]), top - 8); g.lineTo(X(p[0]), H); g.stroke();
+    g.beginPath(); g.arc(X(p[0]), Y(p[1]), 5.5, 0, Math.PI * 2); g.fillStyle = col; g.fill(); g.strokeStyle = "#000"; g.lineWidth = 2; g.stroke();
+  }
+  S.geom = {pts, X, x0, x1, padL, padR, W};
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function nearest(points, t) { let best = points[0]; for (const p of points) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p; return best; }
+const cvBox = $("#chart");
+function scrubAt(ev) {
+  const G = S.geom; if (!G) return;
+  const rect = cvBox.getBoundingClientRect(), mx = ev.clientX - rect.left;
+  const t = G.x0 + (mx - G.padL) / (G.W - G.padL - G.padR) * (G.x1 - G.x0);
+  S.scrub = nearest(G.pts, t);
+  setBalance(S.scrub[1], false);
+  headerLine(S.scrub[1], G.pts[0][1], new Date(S.scrub[0]).toLocaleString("pt-PT", {day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"}));
+  drawChart();
+}
+cvBox.addEventListener("pointerdown", ev => { scrubAt(ev); });
+cvBox.addEventListener("pointermove", ev => { if (ev.pointerType === "mouse" || ev.buttons || ev.pressure) scrubAt(ev); });
+const endScrub = () => { if (!S.scrub) return; S.scrub = null; renderHome(S.d); };
+cvBox.addEventListener("pointerup", endScrub); cvBox.addEventListener("pointerleave", endScrub); cvBox.addEventListener("pointercancel", endScrub);
+new ResizeObserver(() => { if (S.d && S.tab === "home") drawChart(); }).observe(cvBox);
+
+/* ------------------------------------------------------------------ activity rows */
+function rowHtml(f) {
+  const mini = {buy: ["#0a84ff", "+"], win: ["#00d35a", "✓"], loss: ["#ff453a", "✕"], desk: ["#ff9f0a", "?"], demo: ["#8e8e93", "·"], cut: ["#ff453a", "✕"]}[f.kind] || ["#8e8e93", ""];
+  const coin = f.title.split(" ").pop();
+  const ava = ["buy", "win", "loss"].includes(f.kind) ? `<span class="coin">${esc(coin.slice(0, 4))}</span>` : agentIcon(f.agent, 40);
+  let val = "";
+  if (f.kind === "buy") val = `${money(f.value)}<small>${esc(f.note || "")}</small>`;
+  else if (f.kind === "win" || f.kind === "loss") val = `<span class="${f.kind === "win" ? "up" : "down"}">${smoney(f.value)}</span><small>${pct(f.pct)}</small>`;
+  else if (f.kind === "desk" || f.kind === "demo") val = `<span class="dec ${esc(f.decision)}">${esc(f.decision)}</span>`;
+  else if (f.kind === "cut") val = `<span class="t2" style="font-weight:500">${f.passed} passaram</span>`;
+  return `<li class="row"><span class="ava">${ava}<span class="mini" style="background:${mini[0]}" aria-hidden="true">${mini[1]}</span></span><span style="min-width:0"><div class="ti">${esc(f.title)}</div><div class="su">${esc(f.sub)} · ${esc(hhmm(f.ts))}</div></span><span class="va">${val}</span></li>`;
+}
+function renderActivity(d) {
+  const F = {all: () => true, trades: f => ["buy", "win", "loss"].includes(f.kind), desk: f => f.kind === "desk" || f.kind === "demo", cut: f => f.kind === "cut"};
+  const items = d.feed.filter(F[S.filter]);
+  $("#act-all").innerHTML = items.length ? items.map(rowHtml).join("") : `<li class="empty-box">${S.filter === "trades" ? "Ainda não houve trades. O bot compra quando uma moeda passa o Auditor e a mesa aprova." : "Nada aqui ainda."}</li>`;
+}
+document.querySelectorAll(".chips button").forEach(b => b.addEventListener("click", () => {
+  S.filter = b.dataset.f; document.querySelectorAll(".chips button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); renderActivity(S.d);
+}));
+
+/* ------------------------------------------------------------------ agents tab */
+const ORDER = ["Scout", "Auditor", "Charts", "News", "Sentimento", "Cético", "Chefe", "Executor", "Risk"];
+function renderAgents(d) {
+  const paused = d.controls.entries_paused, p = d.params, ag = d.agents;
+  $("#ag-title").textContent = `${ORDER.length} agentes`;
+  const li = (a, b) => `<div class="li"><span>${a}</span><span class="r">${b}</span></div>`;
+  const status = {
+    Scout: paused ? ["pause", "compras em pausa"] : ["", `${ag.scout.watching} moedas · ${ag.scout.signals} sinais`],
+    Auditor: ["", `${d.report.passed}/${d.report.total} passaram`], Charts: ["", "faz o plano quando há sinal"],
+    News: ["idle", "só fala quando há sinal"], Sentimento: ["idle", "só fala quando há sinal"], "Cético": ["idle", "só fala quando há sinal"],
+    Chefe: d.feed.some(f => f.kind === "desk") ? ["", "decidiu " + hhmm(d.feed.find(f => f.kind === "desk").ts)] : ["idle", "à espera de sinal"],
+    Executor: [ag.executor.buys ? "" : "idle", `${ag.executor.buys} compras`], Risk: [d.positions.length ? "" : "idle", `${d.positions.length} posições a guardar`],
+  };
+  const extra = {
+    Scout: `<div class="list">${d.scout.map(c => li(`<b>${esc(c.coin)}</b>`, c.passed ? '<span class="up">passou</span>' : `${esc(pct(c.near))} do máximo`)).join("")}</div>
+      <div class="switch-row"><span><b>Compras novas</b><br><span class="t2" style="font-size:13px">Em pausa, o Risk continua a guardar as posições.</span></span><button class="switch" id="sw-pause" role="switch" aria-checked="${!paused}" aria-label="Compras novas"></button></div>`,
+    Auditor: `<div class="list">${d.scout.map(c => li(`<b>${esc(c.coin)}</b>`, c.passed ? '<span class="up">8/8 → Charts</span>' : `<span class="down">${esc(c.reason)}</span>`)).join("")}</div>`,
+    Charts: d.best ? `<div class="list">${Object.values(d.best.answers).map(a => li(esc(a.q), nf(2).format(a.v ?? 0))).join("")}${li("<b>Nota do Analyst</b>", `<b>${Math.round(d.best.quality)}/100</b> (${esc(d.best.coin)})`)}</div>` : "",
+    Executor: `<div class="list">${li("Risco por trade", nf(1).format(p.risk_per_trade * 100) + "%")}${li("Posições por sleeve", p.max_positions)}${li("Não compra se o preço fugiu", p.gap ? "> " + nf(0).format(p.gap * 100) + "%" : "desligado")}</div>`,
+    Risk: `<div class="list">${d.positions.length ? d.positions.map(x => li(`<b>${esc(x.symbol.replace("USDT", ""))}</b> <span class="${x.pnl_pct >= 0 ? "up" : "down"}">${pct(x.pnl_pct)}</span>`, `stop a ${pct(x.to_stop_pct)}`)).join("") : li("Stop inicial", nf(1).format(p.stop_atr) + " ATR") + li("Trailing", nf(1).format(p.trail_atr) + " ATR") + li("Dinheiro parado", p.timeout_days ? `${p.timeout_days} dias < +${nf(1).format(p.timeout_min_r)}R` : "desligado") + li("Kill switch", "−" + nf(0).format(p.halt * 100) + "%")}</div>`,
+    Chefe: (() => { const ds = d.feed.filter(f => f.kind === "desk" || f.kind === "demo").slice(0, 6); return ds.length ? `<div class="list">${ds.map(f => li(`${esc(f.title)} <span class="t3">${esc(hhmm(f.ts))}</span>`, `<span class="dec ${esc(f.decision)}">${esc(f.decision)}</span>`)).join("")}</div>` : ""; })(),
+    "Cético": `<div class="list">${li("Reward:risk mínimo", nf(1).format(p.min_rr) + ":1")}</div>`,
+  };
+  $("#ag-list").innerHTML = ORDER.map(id => {
+    const [k, txt] = status[id];
+    return `<div class="fcard"><div class="h">${agentIcon(id, 44)}<div><div class="nm">${esc(id)}</div><div class="meta"><span class="st" style="display:inline-flex;gap:5px;align-items:center"><i style="width:7px;height:7px;border-radius:50%;display:inline-block;background:${k === "pause" ? "var(--orange)" : k === "idle" ? "var(--grey)" : "var(--green)"}"></i>${esc(txt)}</span></div></div></div><p>${esc(d.roles[id] || "")}</p>${extra[id] || ""}</div>`;
+  }).join("");
+  const sw = $("#sw-pause");
+  if (sw) sw.addEventListener("click", async () => {
+    const pause = sw.getAttribute("aria-checked") === "true";
+    sw.disabled = true;
+    try { await api("/api/controls", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({entries_paused: pause})}); await load(); }
+    catch (e) { alert("Não deu: " + e.message); }
+    sw.disabled = false;
+  });
+}
+
+/* ------------------------------------------------------------------ account tab */
+function renderAccount(d) {
+  const a = d.account || {}, t = Object.fromEntries((d.tasks || []).map(x => [x.name, x]));
+  const li = (k, v) => `<div class="li"><span>${k}</span><span class="r">${v}</span></div>`;
+  const bot = t["AI Desk Bot"];
+  $("#acc").innerHTML = `
+    <div class="fcard" style="display:flex;gap:12px;align-items:center"><span class="pill paper">PAPER</span><span class="t2" style="font-size:14px">Dinheiro fictício na conta do AI-Trader. Este bot não tem ligação a dinheiro real, de propósito.</span></div>
+    <p class="group-h">Conta</p>
+    <div class="group">${li("Capital", money(a.equity))}${li("Em cash", money(a.cash))}${li("Investido", money(a.equity != null ? a.equity - a.cash : null))}${li("Desde o início", `<span class="${(a.equity ?? d.start) >= d.start ? "up" : "down"}">${smoney(a.equity != null ? a.equity - d.start : null)}</span>`)}${li("Queda desde o pico", pct(d.drawdown))}${li("Kill switch", d.halted ? '<span class="down">ATIVO</span>' : `desligado (−${nf(0).format(d.params.halt * 100)}%)`)}</div>
+    <p class="group-h">Sistema</p>
+    <div class="group">${li("Servidor AI-Trader", d.server_ok ? '<span class="up">a responder</span>' : '<span class="down">não responde</span>')}${li("Bot", bot && bot.state !== "missing" && bot.state !== "checking" ? (bot.state === "Disabled" ? "pausado" : `último ciclo ${esc(hhmm(bot.last_run))}`) : "—")}${li("Compras novas", d.controls.entries_paused ? '<span style="color:var(--orange)">em pausa</span>' : "ligadas")}${li("Próxima reunião da mesa", esc(hhmm(d.next_desk_utc)))}${li("IA", esc(d.ai.model))}</div>
+    <p class="group-h">Atalhos</p>
+    <div class="group"><a class="lnk" href="/#overview">Painel completo (parâmetros, backtest)<span class="chev">›</span></a><button class="lnk" id="how-install">Pôr no ecrã principal<span class="chev">›</span></button><button class="lnk" id="set-pw-btn">Password da app<span class="chev">›</span></button><button class="lnk" id="forget" style="color:var(--red)">Esquecer este telemóvel<span class="chev">›</span></button></div>
+    <form id="set-pw" class="fcard" hidden autocomplete="off">
+      <b>Password para entrar na app do ecrã principal</b>
+      <p style="margin:6px 0 10px">No iPhone, a app do ecrã principal não vê a chave do Safari, por isso entra com esta password. Pelo menos 6 caracteres.</p>
+      <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
+      <input class="field" id="pw1" type="password" autocomplete="new-password" minlength="6" required aria-label="Nova password" placeholder="Nova password">
+      <input class="field" id="pw2" type="password" autocomplete="new-password" minlength="6" required aria-label="Repetir a password" placeholder="Repetir a password" style="margin-top:8px">
+      <button class="btn-main" type="submit">Guardar password</button>
+      <p class="msg" id="set-pw-msg" role="status"></p>
+    </form>
+    <div id="install-help" class="fcard" hidden><b>iPhone:</b> no Safari, botão Partilhar → "Adicionar ao ecrã principal".<br><b>Android:</b> no Chrome, menu ⋮ → "Adicionar ao ecrã principal".<br><span class="t2">Abre como uma app, sem a barra do browser. Só funciona com o telemóvel no Wi-Fi de casa e o PC ligado.</span></div>`;
+  $("#how-install").onclick = () => { $("#install-help").hidden = !$("#install-help").hidden; };
+  $("#set-pw-btn").onclick = () => { $("#set-pw").hidden = !$("#set-pw").hidden; if (!$("#set-pw").hidden) $("#pw1").focus(); };
+  $("#set-pw").onsubmit = async e => {
+    e.preventDefault();
+    const msg = $("#set-pw-msg"); msg.className = "msg";
+    if ($("#pw1").value !== $("#pw2").value) { msg.textContent = "As duas passwords não são iguais."; return; }
+    try {
+      await api("/api/phone/password", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("#pw1").value})});
+      $("#pw1").value = $("#pw2").value = "";
+      msg.className = "msg ok"; msg.textContent = "Guardada. Na app do ecrã principal, entra com esta password.";
+    } catch (err) { msg.textContent = err.message; }
+  };
+  $("#forget").onclick = () => { if (confirm("Apagar a chave deste telemóvel? Para voltar, lês outra vez o QR code no PC.")) { store.del("deskbot-token"); TOKEN = ""; $("#lock").hidden = false; } };
+}
+
+/* ------------------------------------------------------------------ notifications sheet */
+function openSheet() {
+  const d = S.d; if (!d) return;
+  const seen = +(store.get("deskbot-seen") || 0);
+  $("#notes").innerHTML = d.notes.map(n => `<div class="note">${agentIcon(n.agent, 44)}<div><b>${esc(n.agent === "Bot" ? "AI Desk Bot" : n.agent)} <span class="tm">${esc(hhmm(n.ts))}</span></b><span>${esc(n.text)}</span></div>${n.ts && new Date(n.ts) > seen ? '<i class="ud" aria-label="nova"></i>' : "<i></i>"}</div>`).join("");
+  $("#sheet").hidden = false;
+  store.set("deskbot-seen", String(Date.now()));
+  $("#bell-dot").hidden = true;
+}
+$("#bell").addEventListener("click", openSheet);
+$("#sheet").addEventListener("click", e => { if (e.target.id === "sheet" || e.target.classList.contains("grab")) $("#sheet").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#sheet").hidden = true; });
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Desk Bot">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>AI Desk Bot · modo memes</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0b0c0f;--panel:#14161b;--panel-2:#1b1e25;--line:#23262e;
+  --t1:#f4f5f7;--t2:#a2a6b2;--t3:#6b707d;
+  --green:#22d37a;--green-dim:rgba(34,211,122,.14);--red:#ff5b5b;--red-dim:rgba(255,91,91,.14);
+  --smarts:#22d37a;--trends:#4cc3ff;--debate:#a98bff;--router:#ffb020;--exec:#ff5fa8;
+  --display:-apple-system,"SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:14px/1.4 var(--display);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+body{padding:calc(var(--top) + 4px) 0 calc(var(--bottom) + 24px)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--trends);outline-offset:2px;border-radius:8px}
+a{color:inherit;text-decoration:none}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding:0 14px}
+.mono{font-family:var(--mono)}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}
+
+/* boot */
+.boot{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;transition:opacity .35s}
+.boot.out{opacity:0;pointer-events:none}
+.boot img{width:92px;height:92px;border-radius:24px}
+.boot b{font:700 30px var(--display)}
+.boot .sub{font:12px var(--mono);color:var(--t3)}
+.clone{width:100%;max-width:330px;margin-top:26px;font:11.5px var(--mono);color:var(--t2)}
+.clone .h{color:var(--t3);margin-bottom:8px}
+.clone div.r{display:flex;justify-content:space-between;gap:8px;margin:5px 0}
+.clone .bar{height:3px;background:var(--panel-2);border-radius:2px;overflow:hidden;margin-top:14px}
+.clone .bar i{display:block;height:100%;width:0;background:var(--t1);transition:width 1.6s ease}
+
+/* top */
+.top{display:flex;align-items:center;gap:8px;height:50px}
+.top img{width:30px;height:30px;border-radius:8px}
+.top .nm{font-weight:700;font-size:17px}
+.chip{font:11px var(--mono);color:var(--t3);background:var(--panel-2);border-radius:6px;padding:2px 7px}
+.live{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--green)}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite alternate}
+.live.off{color:var(--t3)}.live.off i{background:var(--t3);animation:none}
+@keyframes blink{from{opacity:.3}to{opacity:1}}
+.back{width:40px;height:44px;margin-left:-10px;display:grid;place-items:center;font-size:24px;color:var(--t3)}
+
+/* ticker */
+.tick{overflow:hidden;margin:0 -14px;white-space:nowrap;border-bottom:1px solid var(--line);-webkit-mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
+.tick .run{display:inline-flex;gap:16px;padding:6px 0;animation:marq 40s linear infinite}
+.tick span{display:inline-flex;align-items:center;gap:5px;font:11.5px var(--mono)}
+.tick i{width:13px;height:13px;border-radius:50%;display:inline-block}
+@keyframes marq{to{transform:translateX(-50%)}}
+
+/* headline */
+.cap{font:11.5px var(--mono);color:var(--t3);margin:10px 0 0}
+.balrow{display:flex;align-items:flex-start;justify-content:space-between}
+.bal{font:700 clamp(44px,13vw,58px)/1.05 var(--display);letter-spacing:-.02em}
+.bal .c{color:var(--t3)}
+.delta{font:12px var(--mono);border-radius:6px;padding:2px 6px;margin-top:10px;background:var(--green-dim);color:var(--green)}
+.delta.neg{background:var(--red-dim);color:var(--red)}
+.meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;font:12.5px var(--mono);color:var(--t2)}
+.pill{font:700 12px var(--mono);border-radius:999px;padding:2px 9px;background:var(--t1);color:#000}
+.sub2{display:flex;justify-content:space-between;font:12px var(--mono);margin-top:4px}
+
+/* chart */
+.chart{position:relative;height:150px;margin:6px -14px 0;touch-action:pan-y}
+.chart canvas{display:block;width:100%;height:100%}
+.legend{display:flex;justify-content:space-between;font:10.5px var(--mono);color:var(--t3);margin-top:2px}
+
+/* boxes */
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:12px}
+.box-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.box-h b{font-size:13.5px}
+.box-h span{font:11px var(--mono);color:var(--green)}
+.log{font:11.5px/1.55 var(--mono)}
+.log div{display:grid;grid-template-columns:42px 36px minmax(0,1fr) auto;gap:6px;align-items:center;padding:2px 0}
+.log .tm{color:var(--t3)}
+.log .tg{font-weight:700}.log .tg.buy{color:var(--green)}.log .tg.sell{color:var(--red)}
+.log .co{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log .co i{width:12px;height:12px;border-radius:50%;flex:none}
+.log .vl{color:var(--t2);white-space:nowrap}
+.ag{display:grid;grid-template-columns:22px 60px minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 0;font-size:12.5px;border-top:1px solid var(--line)}
+.ag:first-of-type{border-top:0}
+.ag .nm{font:700 11.5px var(--mono)}
+.ag .rd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t2);font:11.5px var(--mono)}
+.ag .rd b{color:var(--t1);font-weight:600}
+.ag .src{font:10.5px var(--mono);color:var(--t3);white-space:nowrap}
+.ag .no{color:var(--red)}
+.graph svg{display:block;width:100%;height:auto}
+.btns{display:flex;gap:8px;margin-top:12px}
+.btn{flex:1;min-height:46px;border-radius:999px;background:var(--panel-2);font-weight:700;font-size:14px}
+.btn.primary{background:var(--t1);color:#000}
+.btn:disabled{opacity:.45}
+
+/* sheets */
+.sheet-bg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:92vh;overflow:auto;background:var(--panel);border-radius:22px 22px 0 0;padding:16px 16px calc(var(--bottom) + 18px)}
+.sheet .grab{width:38px;height:5px;border-radius:3px;background:var(--t3);margin:0 auto 12px}
+.conn-icons{display:flex;justify-content:center;align-items:center;gap:10px}
+.conn-icons img{width:44px;height:44px;border-radius:12px}
+.conn-icons .dots{color:var(--t3);letter-spacing:3px}
+.sheet h2{text-align:center;margin:10px 0 2px;font:700 21px var(--display)}
+.kv{margin-top:14px;border-top:1px solid var(--line)}
+.kv div{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.kv div span:first-child{color:var(--t3);font-family:var(--mono);font-size:12px}
+.perm{list-style:none;padding:0;margin:12px 0 0;font-size:13px;color:var(--t2)}
+.perm li{margin:6px 0}
+.perm .y{color:var(--green)}.perm .n{color:var(--red)}
+.choice{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.choice button{min-height:38px;padding:0 12px;border-radius:10px;background:var(--panel-2);font:600 13px var(--mono)}
+.choice button[aria-pressed="true"]{background:var(--t1);color:#000}
+.lbl{font:11.5px var(--mono);color:var(--t3);margin-top:12px}
+.go{width:100%;min-height:52px;border-radius:999px;background:var(--green);color:#03140b;font-weight:800;font-size:16px;margin-top:16px}
+.go.done{background:#1a6b40;color:#d9ffe9}
+.repos .rp{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
+.repos .rp .t{display:flex;justify-content:space-between;font:12px var(--mono)}
+.repos .rp .d{font-size:12px;color:var(--t3);margin:2px 0 6px}
+.role{display:inline-flex;align-items:center;gap:6px;font:700 11px var(--mono);border-radius:7px;padding:3px 8px}
+.recap .k{font:11.5px var(--mono);color:var(--t3);margin-top:12px}
+.recap .v1{font:700 30px var(--display)}
+.recap .v2{font:700 36px var(--display)}
+.recap .row{display:flex;justify-content:space-between;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.tiles div{background:var(--panel-2);border-radius:10px;padding:7px 8px}
+.tiles span{display:block;font:10.5px var(--mono);color:var(--t3)}
+.tiles b{font-size:17px}
+.links a{display:flex;justify-content:space-between;align-items:center;min-height:48px;padding:0 4px;border-bottom:1px solid var(--line);font-size:15px}
+
+/* toast */
+.toast{position:fixed;left:50%;top:calc(var(--top) + 8px);transform:translate(-50%,-140%);z-index:60;width:min(94vw,520px);background:rgba(30,32,38,.96);border:1px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;gap:10px;align-items:center;transition:transform .35s ease;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.toast.on{transform:translate(-50%,0)}
+.toast b{display:block;font-size:13.5px}
+.toast span{font-size:12px;color:var(--t2)}
+.lock{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;flex-direction:column;justify-content:center;gap:10px;padding:32px;text-align:center}
+.field{width:100%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--t1);padding:0 14px;font-size:17px}
+.offline{margin:4px 14px 0;padding:8px 12px;border-radius:12px;background:var(--red-dim);color:var(--red);font-size:13px}
+@media (prefers-reduced-motion:reduce){.tick .run{animation:none}.tick{overflow-x:auto}.boot,.toast{transition:none}.live i{animation:none}.clone .bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="boot" id="boot" aria-hidden="true">
+  <img src="icon-180.png" alt="">
+  <b>AI Desk Bot</b>
+  <span class="sub">terminal · modo memes</span>
+  <div class="clone" id="clone"></div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="offline" id="offline" role="status" hidden></div>
+
+<main class="wrap" id="main" hidden>
+  <div class="top"><a class="back" href="index.html" aria-label="Voltar às mesas">‹</a><img src="icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip">modo memes</span><span class="live" id="live"><i></i>Live</span></div>
+  <div class="tick" id="tick"></div>
+  <div class="cap" id="cap"></div>
+  <div class="balrow"><div class="bal" id="bal"></div><span class="delta" id="delta" hidden></span></div>
+  <div class="meta" id="meta"></div>
+  <div class="sub2" id="sub2"></div>
+  <div class="chart" id="chart"><canvas id="cv" role="img" aria-label="Saldo da sessão"></canvas></div>
+  <div class="legend" id="legend"></div>
+  <div class="box"><div class="log" id="trades"></div></div>
+  <div class="box"><div class="box-h"><b>agentes · a trabalhar juntos</b><span id="running"></span></div><div id="agents"></div></div>
+  <div class="box graph"><div class="box-h"><b>5 agentes → núcleo</b><span class="t3" id="agree"></span></div><div id="graph"></div></div>
+  <div class="btns"><button class="btn" id="b-new">Nova sessão</button><button class="btn" id="b-stop">Parar sessão</button></div>
+  <p class="t3" style="font-size:11.5px;margin:14px 2px 0">Papel: nenhuma carteira, nenhuma ordem real. Dados públicos do GeckoTerminal, DexScreener, Jupiter e da rede Solana; links para o pump.fun e a GMGN.</p>
+</main>
+
+<div class="sheet-bg" id="sheet" hidden><div class="sheet" role="dialog" aria-modal="true" id="sheet-in"></div></div>
+
+<div class="lock" id="lock" hidden>
+  <img src="icon-180.png" alt="" style="width:72px;height:72px;border-radius:18px;margin:0 auto">
+  <h1 style="font:700 24px var(--display);margin:0">AI Desk Bot</h1>
+  <form id="login" hidden style="max-width:340px;margin:8px auto 0;text-align:left;width:100%">
+    <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
+    <input class="field" id="pw" type="password" autocomplete="current-password" required minlength="6" placeholder="Password">
+    <button class="go" type="submit">Entrar</button>
+    <p id="login-msg" style="color:var(--red);font-size:13px;min-height:18px"></p>
+  </form>
+  <p class="t2" id="lock-nopw" hidden>Ainda não há password. Define-a no PC (painel → Telemóvel).</p>
+</div>
+
+<script>
+/* Remote mode: /api/... answered by the Supabase relay (PC or GitHub, whichever is running the bot). */
+(function () {
+  const URL = "https://kkawnjfowemyqkplkrma.supabase.co", KEY = "sb_publishable_oL1nYjpN8GKzuG_RuhwGgQ_DAxM06qa", H = {"apikey": KEY, "Content-Type": "application/json"};
+  const tok = () => { try { return localStorage.getItem("deskbot-token") || ""; } catch (e) { return ""; } };
+  const cache = {items: {}, since: null};
+  const reply = (code, body) => new Response(JSON.stringify(body), {status: code, headers: {"Content-Type": "application/json"}});
+  async function rpc(name, body) {
+    const r = await fetch(URL + "/rest/v1/rpc/" + name, {method: "POST", headers: H, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 403 || r.status === 401 || (j && j.message === "login needed")) { const e = new Error("login"); e.code = 401; throw e; }
+    if (!r.ok) throw new Error(j.message || r.statusText);
+    return j;
+  }
+  async function state() {
+    const j = await rpc("app_state", {p_token: tok(), p_since: cache.since});
+    Object.assign(cache.items, j.items || {});
+    cache.since = j.now;
+    return cache.items;
+  }
+  const val = (items, k) => (items[k] || {}).value;
+  const realFetch = window.fetch.bind(window);
+  window.DESKBOT_REMOTE = true;
+  window.fetch = async function (input, opts = {}) {
+    const path = typeof input === "string" ? input : input.url;
+    if (!path.startsWith("/api/")) return realFetch(input, opts);
+    const body = opts.body ? JSON.parse(opts.body) : {};
+    try {
+      if (path === "/api/login" && (opts.method || "GET") === "GET") return reply(200, {password_set: true});
+      if (path === "/api/login") {
+        const r = await realFetch(URL + "/functions/v1/login", {method: "POST", headers: H, body: JSON.stringify({password: body.password})});
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) { cache.items = {}; cache.since = null; }
+        return reply(r.status, j);
+      }
+      if (path === "/api/desks" || path.startsWith("/api/desk/")) {
+        if (opts.method === "POST") {
+          if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
+          else if (path === "/api/desk/memes/start") await rpc("app_command", {p_token: tok(), p_kind: "start_session", p_payload: body});
+          else if (path === "/api/desk/memes/stop") await rpc("app_command", {p_token: tok(), p_kind: "stop_session", p_payload: {}});
+          else return reply(404, {error: "not found"});
+          return reply(202, {queued: true});
+        }
+        const items = await state();
+        const runner = val(items, "app:runner") || {};
+        const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
+        if (!data) return reply(503, {error: "Ainda sem dados do bot"});
+        return reply(200, Object.assign({}, data, {runner}));
+      }
+      return reply(404, {error: "Só disponível no PC"});
+    } catch (e) {
+      if (e.code === 401) return reply(401, {error: "login"});
+      throw e;
+    }
+  };
+})();
+</script>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const NF = {};
+const nf = (d = 2) => NF[d] || (NF[d] = (() => { try { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: "always"}); } catch (e) { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d}); } })());
+const eur = v => v == null ? "—" : nf(2).format(v) + " €";
+const seur = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(2).format(Math.abs(v)) + " €";
+const pct = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(d).format(Math.abs(v * 100)) + "%";
+const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+const hhmm = iso => iso ? new Date(iso).toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"}) : "—";
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
+function bigMoney(v) { const s = eur(v), i = s.lastIndexOf(","); return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<span class="c">${esc(s.slice(i))}</span>`; }
+
+/* ---------------------------------------------------------------- auth (same as the other pages) */
+(function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
+let TOKEN = store.get("deskbot-token") || "";
+async function api(path, opts = {}) {
+  let r;
+  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {"X-Desk-Token": TOKEN} : {});
+  try { r = await fetch(path, Object.assign({}, opts, {headers})); }
+  catch (e) { const err = new Error("sem ligação"); err.offline = true; throw err; }
+  if (r.status === 401) { showLock(); const err = new Error("sem chave"); err.locked = true; throw err; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+async function showLock() {
+  $("#lock").hidden = false;
+  let has = false;
+  try { has = (await (await fetch("/api/login")).json()).password_set; } catch (e) {}
+  $("#login").hidden = !has; $("#lock-nopw").hidden = has;
+}
+$("#login").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("#pw").value})});
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.token) throw new Error(b.error || "Não deu para entrar.");
+    TOKEN = b.token; store.set("deskbot-token", TOKEN); $("#lock").hidden = true; load();
+  } catch (err) { $("#login-msg").textContent = err.message; }
+});
+
+/* ---------------------------------------------------------------- agents: colours and faces */
+const AG = {
+  SMARTS: {c: "var(--smarts)", hex: "#22d37a", s: "M20 3l14 8v16l-14 8-14-8V11z"},
+  TRENDS: {c: "var(--trends)", hex: "#4cc3ff", s: "M20 4a16 16 0 1 1 0 32 16 16 0 0 1 0-32z"},
+  DEBATE: {c: "var(--debate)", hex: "#a98bff", s: "M10 5h20a5 5 0 0 1 5 5v20a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5z"},
+  ROUTER: {c: "var(--router)", hex: "#ffb020", s: "M20 4c1.4 0 2.6.8 3.3 2l12 21c1.5 2.6-.4 6-3.4 6H8.1c-3 0-4.9-3.4-3.4-6l12-21c.7-1.2 1.9-2 3.3-2z"},
+  EXEC: {c: "var(--exec)", hex: "#ff5fa8", s: "M20 3l4.2 7.6 8.4-1.8-3.4 7.9 6 6.1-8.5 1.2-.7 8.6L20 26.8l-6 4.8-.7-8.6-8.5-1.2 6-6.1-3.4-7.9 8.4 1.8z"},
+};
+const ORDER = ["SMARTS", "TRENDS", "DEBATE", "ROUTER", "EXEC"];
+function face(a, size = 22) {
+  const x = AG[a] || AG.TRENDS;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><path d="${x.s}" fill="${x.hex}"/><ellipse cx="15.5" cy="20" rx="3.2" ry="4" fill="#fff"/><ellipse cx="24.5" cy="20" rx="3.2" ry="4" fill="#fff"/><circle cx="16.2" cy="21" r="1.7" fill="#000"/><circle cx="25.2" cy="21" r="1.7" fill="#000"/></svg>`;
+}
+const COLORS = ["#f7931a", "#4cc3ff", "#22d37a", "#ffb020", "#a98bff", "#ff5fa8", "#64748b", "#e11d48", "#14b8a6"];
+const coinColor = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+
+/* ---------------------------------------------------------------- boot: git clone · 5 repos */
+const STARS = {"GMGNAI/gmgn-skills": 685, "8bitsats/Solana-MCP-Trading-Server": 14, "TauricResearch/TradingAgents": 121491, "sendaifun/solana-agent-kit": 1748, "0xsyncroot/opentrade": 9};
+const short = n => n >= 1000 ? nf(n >= 10000 ? 0 : 1).format(n / 1000) + "k" : String(n);
+function boot(done) {
+  const repos = Object.keys(STARS);
+  $("#clone").innerHTML = `<div class="h">$ git clone · ${repos.length} repos</div>${repos.map((r, i) => `<div class="r" style="opacity:0" data-i="${i}"><span>${esc(r)}</span><span>★ ${short(STARS[r])}</span></div>`).join("")}<div class="bar"><i></i></div>`;
+  const rows = [...document.querySelectorAll("#clone .r")];
+  if (REDUCED) { rows.forEach(r => r.style.opacity = 1); setTimeout(finish, 300); }
+  else { rows.forEach((r, i) => setTimeout(() => { r.style.transition = "opacity .25s"; r.style.opacity = 1; }, 250 + i * 260)); requestAnimationFrame(() => $("#clone .bar i").style.width = "100%"); setTimeout(finish, 1900); }
+  function finish() { $("#boot").classList.add("out"); setTimeout(() => { $("#boot").hidden = true; done(); }, REDUCED ? 0 : 350); }
+}
+
+/* ---------------------------------------------------------------- data */
+const S = {d: null, lastEv: null, timer: null, minutes: 720, eur: 110, connected: false};
+async function load() {
+  let d;
+  try { d = await api("/api/desk/memes"); $("#offline").hidden = true; }
+  catch (e) { if (!e.locked) { $("#offline").hidden = false; $("#offline").textContent = e.offline ? "Sem ligação ao bot · a tentar outra vez" : "Erro: " + e.message; } return; }
+  const first = !S.d;
+  S.d = d;
+  render(d);
+  if (first) {
+    S.lastEv = (d.log || [])[0]?.ts || null;
+    if (!d.running && (!d.recap || d.mode !== "memes")) openConnect();
+    else if (!d.running && d.recap && d.mode === "memes") openRecap();
+  } else toasts(d);
+}
+
+/* ---------------------------------------------------------------- render */
+function render(d) {
+  $("#main").hidden = false;
+  const running = d.running;
+  $("#live").className = "live" + (running ? "" : " off"); $("#live").innerHTML = `<i></i>${running ? "Live" : "parada"}`;
+  const tk = (d.ticker || []).map(t => `<span><i style="background:${coinColor(t.symbol)}" aria-hidden="true"></i>${esc(t.symbol)} <span class="${cls(t.pct)}">${esc(pct(t.pct, 0))}</span> <span class="t3">dex</span></span>`).join("");
+  $("#tick").innerHTML = `<div class="run">${tk ? tk + tk : '<span class="t3">à espera das primeiras moedas</span>'}</div>`;
+  const mins = d.started ? Math.max(0, Math.round(((running ? Date.now() : new Date(d.ends)) - new Date(d.started)) / 60000)) : 0;
+  $("#cap").textContent = `a negociar em papel · 5 repos · 5 agentes · ${Math.floor(mins / 60)}h ${mins % 60}m${running ? "" : " (terminada)"}`;
+  const eq = d.equity_eur, start = d.start_eur, diff = eq - start;
+  $("#bal").innerHTML = bigMoney(eq);
+  const pts = (d.curve || []).filter(p => p[1] != null);
+  const recent = pts.length > 12 ? eq - pts[pts.length - 13][1] : null;
+  $("#delta").hidden = recent == null || Math.abs(recent) < 0.01;
+  if (recent != null) { $("#delta").textContent = seur(recent).replace(" €", "€"); $("#delta").className = "delta" + (recent < 0 ? " neg" : ""); }
+  const trades = d.trades || [];
+  $("#meta").innerHTML = `<span>pôs ${esc(eur(start))}</span><span>·</span><span>${trades.length} trades</span><span class="pill">${nf(2).format(eq / (start || 1))}×</span>`;
+  $("#sub2").innerHTML = `<span class="${cls(diff)}">${esc(seur(diff))} · ${d.wins || 0}W ${d.losses || 0}L</span><span class="t3">${esc(hhmm(new Date().toISOString()))}</span>`;
+  drawChart(d, pts);
+  // trade log: the last buys and sells
+  const tl = (d.log || []).filter(e => e.verdict === "buy" || e.verdict === "sell").slice(0, 3);
+  $("#trades").innerHTML = tl.length ? tl.map(e => {
+    const val = e.pnl_eur != null ? `<span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span>` : esc((e.reason || "").replace(/^comprou /, "").split(" · ")[0]);
+    return `<div data-mint="${esc(e.mint || "")}" data-coin="${esc(e.coin)}" role="button" tabindex="0"><span class="tm">${esc(hhmm(e.ts))}</span><span class="tg ${e.verdict}">${e.verdict === "buy" ? "BUY" : "SELL"}</span><span class="co"><i style="background:${coinColor(e.coin)}"></i>${esc(e.coin)}</span><span class="vl">${val} <span class="t3">papel</span></span></div>`;
+  }).join("") : `<div><span class="tm">—</span><span class="tg t3">…</span><span class="co t3">ainda sem trades nesta sessão</span><span></span></div>`;
+  // agents working together
+  const ags = d.agents || {};
+  const runningN = running ? ORDER.length : 0;
+  $("#running").innerHTML = running ? `● ${runningN} a correr` : `<span class="t3">parados</span>`;
+  const src = {SMARTS: "gmgn-skills", TRENDS: "MCP-Trading", DEBATE: "TradingAgents", ROUTER: "agent-kit", EXEC: "opentrade"};
+  $("#agents").innerHTML = ORDER.map(a => {
+    const x = ags[a] || {}, ok = x.ok;
+    const coin = x.coin ? `<span style="display:inline-flex;align-items:center;gap:4px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${coinColor(x.coin)}"></i><b>${esc(x.coin)}</b></span> · ` : "";
+    return `<div class="ag">${face(a)}<span class="nm" style="color:${AG[a].c}">${a}</span><span class="rd ${ok === false ? "" : ""}">${coin}<span class="${ok === false ? "no" : ""}">${esc(x.text || "à espera")}</span></span><span class="src">${src[a]}</span></div>`;
+  }).join("");
+  // graph: 5 agents → core
+  const lastCore = (d.log || []).find(e => e.agent === "CORE");
+  $("#agree").textContent = lastCore ? `${hhmm(lastCore.ts)} · ${lastCore.coin} · 5/5` : "à espera de 5/5";
+  $("#graph").innerHTML = graph(ags, running);
+  $("#b-stop").disabled = !running; $("#b-new").disabled = running;
+  document.querySelectorAll("#trades [data-coin]").forEach(r => r.onclick = () => coinSheet(r.dataset.coin, r.dataset.mint));
+}
+function graph(ags, running) {
+  const W = 340, H = 150, xs = ORDER.map((_, i) => 34 + i * 68), cy = 118;
+  let g = "";
+  ORDER.forEach((a, i) => {
+    const on = running && ags[a] && ags[a].ok !== false;
+    g += `<path d="M${xs[i]} 46 C ${xs[i]} 85, ${W / 2} 80, ${W / 2} ${cy - 18}" fill="none" stroke="${AG[a].hex}" stroke-opacity="${on ? .9 : .25}" stroke-width="1.6" stroke-dasharray="${on ? "0" : "3 4"}"/>`;
+    g += `<g transform="translate(${xs[i] - 14},10)">${face(a, 28).replace("<svg ", "<svg x='0' y='0' ")}</g><text x="${xs[i]}" y="52" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#a2a6b2">${a}</text>`;
+  });
+  g += `<circle cx="${W / 2}" cy="${cy}" r="19" fill="#0b0c0f" stroke="#22d37a" stroke-width="2"/><image href="icon-180.png" x="${W / 2 - 12}" y="${cy - 12}" width="24" height="24"/><text x="${W / 2}" y="${cy + 31}" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#a2a6b2">NÚCLEO</text>`;
+  g += `<path d="M${W / 2 + 21} ${cy} L ${W / 2 + 50} ${cy}" stroke="#22d37a" stroke-width="1.6"/><text x="${W / 2 + 56}" y="${cy + 3}" font-family="ui-monospace,monospace" font-size="9" fill="#22d37a" font-weight="700">EXECUTA</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Os 5 agentes ligados ao núcleo que executa">${g}</svg>`;
+}
+function drawChart(d, pts) {
+  const box = $("#chart"), cv = $("#cv"), W = box.clientWidth, H = box.clientHeight, dpr = devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const start = d.start_eur;
+  if (pts.length < 2) { g.strokeStyle = "#2a2d36"; g.setLineDash([3, 5]); g.beginPath(); g.moveTo(14, H * .7); g.lineTo(W - 14, H * .7); g.stroke(); $("#legend").innerHTML = ""; return; }
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  let lo = Math.min(start, ...pts.map(p => p[1])), hi = Math.max(start, ...pts.map(p => p[1]));
+  if (hi - lo < start * .002) { lo -= start * .001; hi += start * .001; }
+  const X = t => 14 + (t - x0) / ((x1 - x0) || 1) * (W - 28), Y = v => 10 + (hi - v) / (hi - lo) * (H - 18);
+  const up = pts[pts.length - 1][1] >= start, col = up ? "#22d37a" : "#ff5b5b";
+  g.strokeStyle = "#2a2d36"; g.setLineDash([3, 5]); g.beginPath(); g.moveTo(14, Y(start)); g.lineTo(W - 14, Y(start)); g.stroke(); g.setLineDash([]);
+  const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, up ? "rgba(34,211,122,.30)" : "rgba(255,91,91,.22)"); grad.addColorStop(1, "rgba(11,12,15,0)");
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = grad; g.fill();
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.strokeStyle = col; g.lineWidth = 2; g.stroke();
+  const lp = pts[pts.length - 1]; g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 4.5, 0, Math.PI * 2); g.fillStyle = "#0b0c0f"; g.fill(); g.strokeStyle = "#f4f5f7"; g.lineWidth = 2; g.stroke();
+  $("#legend").innerHTML = `<span>${esc(hhmm(new Date(x0).toISOString()))}</span><span>— valor · - - pôs</span><span>${esc(d.running ? hhmm(d.ends) : hhmm(new Date(x1).toISOString()))}</span>`;
+}
+new ResizeObserver(() => { if (S.d) drawChart(S.d, (S.d.curve || []).filter(p => p[1] != null)); }).observe($("#chart"));
+
+/* ---------------------------------------------------------------- toasts for new trades and 5/5 decisions */
+let toastTimer = null;
+function toast(html) {
+  const t = $("#toast"); t.innerHTML = html; t.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 4500);
+}
+function toasts(d) {
+  const fresh = (d.log || []).filter(e => !S.lastEv || e.ts > S.lastEv);
+  if (fresh.length) S.lastEv = fresh[0].ts;
+  const e = fresh.find(x => x.verdict === "sell" || x.verdict === "buy" || (x.agent === "CORE" && x.verdict === "pass") || (x.agent === "SMARTS" && x.verdict === "pass"));
+  if (!e) return;
+  const icon = `<img src="icon-180.png" alt="" width="34" height="34" style="border-radius:9px">`;
+  if (e.verdict === "sell") toast(`${icon}<div><b>Vendeu ${esc(e.coin)} ${esc(seur(e.pnl_eur))}</b><span>${esc((e.reason || "").split(")")[0].replace("vendeu (", ""))} · papel</span></div>`);
+  else if (e.verdict === "buy") toast(`${icon}<div><b>Comprou ${esc(e.coin)}</b><span>5/5 agentes concordaram · papel</span></div>`);
+  else if (e.agent === "CORE") toast(`${icon}<div><b>${esc(e.coin)}: 5/5 agentes concordaram</b><span>${esc(e.reason)}</span></div>`);
+  else toast(`${face("SMARTS", 34)}<div><b>Baleias a comprar ${esc(e.coin)}</b><span>${esc(e.reason)} em 30 min · SMARTS</span></div>`);
+}
+
+/* ---------------------------------------------------------------- sheets */
+function sheet(html) { $("#sheet-in").innerHTML = `<div class="grab" aria-hidden="true"></div>` + html; $("#sheet").hidden = false; }
+function closeSheet() { $("#sheet").hidden = true; }
+$("#sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeSheet(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+const DUR = [[5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [120, "2 h"], [720, "12 h"]];
+function openConnect() {
+  const d = S.d || {}, stakes = d.stakes || [50, 110, 500, 1000];
+  const until = new Date(Date.now() + S.minutes * 60000);
+  sheet(`<div class="conn-icons"><img src="icon-180.png" alt=""><span class="dots">• • •</span>${face("SMARTS", 44)}</div>
+    <h2>Ligar a mesa de memes</h2><p class="t3" style="text-align:center;margin:0;font-size:12.5px">AI Desk Bot quer negociar memecoins da Solana em papel</p>
+    <div class="kv"><div><span>chains</span><span>Solana</span></div><div><span>dados</span><span>pump.fun · GeckoTerminal · Jupiter</span></div><div><span>skills</span><span>5 repos · 5 agentes · 1 núcleo</span></div><div><span>sessão</span><span id="c-sess">${hhmm(new Date().toISOString())} → ${hhmm(until.toISOString())} · ${esc(eur(S.eur))}</span></div></div>
+    <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
+    <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
+    <ul class="perm"><li><span class="y">✓</span> tokens · carteiras · dados de mercado · trades em papel</li><li><span class="y">✓</span> tu escolhes o saldo e a duração</li><li><span class="n">✕</span> não mexe em dinheiro real nem em carteiras</li></ul>
+    <button class="go" id="c-go">Ligar e começar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
+  const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}`; };
+  document.querySelectorAll("#c-dur button").forEach(b => b.onclick = () => { S.minutes = +b.dataset.m; document.querySelectorAll("#c-dur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
+  document.querySelectorAll("#c-eur button").forEach(b => b.onclick = () => { S.eur = +b.dataset.e; document.querySelectorAll("#c-eur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
+  $("#c-go").onclick = async () => {
+    const go = $("#c-go"); go.disabled = true; go.textContent = "A ligar…";
+    try {
+      await api("/api/desk/memes/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({minutes: S.minutes, eur: S.eur})});
+      go.textContent = "Ligado ✓"; go.classList.add("done");
+      setTimeout(() => { openRepos(); }, 700);
+      S.lastEv = new Date().toISOString(); load();
+    } catch (e) { go.disabled = false; go.textContent = "Ligar e começar"; $("#c-msg").textContent = e.message; }
+  };
+}
+function openRepos() {
+  const repos = (S.d && S.d.repos) || [];
+  sheet(`<div class="box-h"><b>${repos.length} repos · 5 agentes · 1 núcleo</b><span>● ${repos.length}/${repos.length} online</span></div>
+    <div class="repos">${repos.map(r => `<div class="rp"><div class="t"><span>● ${esc(r.repo)}</span><span class="t3">★ ${short(STARS[r.repo] || 0)}</span></div><div class="d">${esc(r.role)}</div><span class="role" style="background:${AG[r.agent].hex}22;color:${AG[r.agent].hex}">${face(r.agent, 16)} ${r.agent} · online</span></div>`).join("")}</div>
+    <p class="t3" style="font-size:11.5px">Os papéis são inspirados nestes repositórios; os dados vêm de APIs públicas e tudo corre em papel.</p>
+    <button class="go" id="r-ok">Ver a mesa</button>`);
+  $("#r-ok").onclick = closeSheet;
+}
+function openRecap() {
+  const r = S.d && S.d.recap; if (!r) return;
+  const diff = r.end_eur - r.start_eur, h = r.minutes >= 60 ? `${Math.round(r.minutes / 60)}h` : `${r.minutes} min`;
+  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="icon-180.png" alt="" width="36" height="36" style="border-radius:9px"><div><b style="font-size:17px">Resumo ${esc(h)}</b><div class="t3 mono" style="font-size:11px">modo memes · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+    <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
+    <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="pill">${nf(1).format(r.end_eur / (r.start_eur || 1))}×</span></div>
+    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>moedas</span><b>${r.coins_seen}</b></div><div><span>repos</span><b>5</b></div><div><span>agentes</span><b>5</b></div></div>
+    <p style="font:12px/1.6 var(--mono);color:var(--t2);margin:12px 0 0">${r.best ? `melhor ${esc(r.best.symbol)} <span class="${cls(r.best.pnl_eur)}">${esc(seur(r.best.pnl_eur))}</span><br>pior ${esc(r.worst.symbol)} <span class="${cls(r.worst.pnl_eur)}">${esc(seur(r.worst.pnl_eur))}</span><br>` : "nenhuma moeda passou os 5 agentes<br>"}acerto ${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"} · stop −${nf(0).format((r.stop_pct || .08) * 100)}% em cada trade<br><span class="t3">papel: nenhuma ordem real</span></p>
+    <button class="go" id="re-new">Nova sessão</button></div>`);
+  $("#re-new").onclick = openConnect;
+}
+function coinSheet(coin, mint) {
+  if (!mint) return;
+  const m = encodeURIComponent(mint);
+  sheet(`<h2 style="text-align:left;margin:0 0 8px">${esc(coin)}</h2><div class="links">
+    <a href="https://pump.fun/coin/${m}" target="_blank" rel="noopener noreferrer">Abrir no pump.fun <span aria-hidden="true">›</span></a>
+    <a href="https://gmgn.ai/sol/token/${m}" target="_blank" rel="noopener noreferrer">Abrir na GMGN <span aria-hidden="true">›</span></a>
+    <a href="https://dexscreener.com/solana/${m}" target="_blank" rel="noopener noreferrer">Abrir no DexScreener <span aria-hidden="true">›</span></a></div>
+    <p class="t3" style="font-size:11.5px">Só para ver. Comprar lá é dinheiro real e decisão tua; esta mesa nunca compra por ti.</p>`);
+}
+$("#b-new").onclick = openConnect;
+$("#b-stop").onclick = async () => {
+  if (!confirm("Parar a sessão agora? Vende tudo ao último preço e mostra o resumo.")) return;
+  $("#b-stop").disabled = true;
+  try { await api("/api/desk/memes/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast(`<div><b>A parar a sessão…</b><span>a vender as posições em papel</span></div>`); setTimeout(async () => { await load(); openRecap(); }, 20000); }
+  catch (e) { toast(`<div><b>Não deu para parar</b><span>${esc(e.message)}</span></div>`); $("#b-stop").disabled = false; }
+};
+
+/* ---------------------------------------------------------------- start */
+boot(() => { load(); S.timer = setInterval(() => { if (!document.hidden) load(); }, 5000); });
+</script>
+</body>
+</html>

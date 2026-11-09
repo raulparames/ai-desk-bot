@@ -1,0 +1,32 @@
+# When the PC is off, GitHub runs the paper desks (futures, stocks, memes sessions) and keeps the
+# phone app up to date through the Supabase relay. When the PC is on, this exits in a few seconds.
+name: mesas
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+concurrency:
+  group: mesas
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  ciclo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+      - run: pip install -r requirements.txt
+      - run: python -m deskbot gh-cycle
+        env:
+          RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+          DESKBOT_SHORT_HISTORY: "1"

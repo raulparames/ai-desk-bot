@@ -1,0 +1,302 @@
+"""The three paper desks as the phone app sees them: Memecoins, Futuros, Ações.
+
+Normalises each desk's state into one shape, starts/stops memecoin sessions, pauses desks and
+keeps a cached backtest summary per desk. Used by dashboard.py.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import sys
+import logging
+import subprocess
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
+
+from .config import ROOT
+from .paperdesk import DESKS_DIR, controls, read_state, set_paused
+
+log = logging.getLogger(__name__)
+MEME_DIR = ROOT / "memetest"
+DURATIONS = (5, 10, 15, 30, 120, 720)
+
+META = {
+    "memes": {"title": "Memecoins", "mode": "memecoins", "color": "#ff4fa3",
+              "subtitle": "memecoins da Solana · sessões de 5 min a 12 h",
+              "blurb": "Modo memes: 5 agentes (tendências, baleias, debate, rota Jupiter, execução). Stop −8%, 8% do saldo por moeda."},
+    "futuros": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
+                "subtitle": "perpétuos de cripto · long e short · velas de 4 h",
+                "blurb": "BTC, ETH, SOL, BNB e XRP. Long e short, alavancagem máxima 10x, 1% de risco por trade."},
+    "acoes": {"title": "Ações", "mode": "ações", "color": "#1e9bf0",
+              "subtitle": "S&P 500 com filtro de tendência · revisto todos os meses",
+              "blurb": "SPY quando está acima da média de 200 dias; senão ouro ou obrigações. Sem alavancagem."},
+}
+
+
+def _alive(pid: int) -> bool:
+    """Is this process still running? (never use os.kill(pid, 0) on Windows: there it sends Ctrl+C)"""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    try:
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return code.value == 259
+    except (AttributeError, OSError):
+        return False
+
+
+def meme_running() -> bool:
+    try:
+        return _alive(int((MEME_DIR / "pid").read_text().strip()))
+    except (OSError, ValueError):
+        return False
+
+
+STAKES = (50, 110, 500, 1000)
+
+
+def start_memes(minutes: int, eur: float = 110) -> tuple[int, dict]:
+    if minutes not in DURATIONS:
+        return 400, {"error": f"duração tem de ser {', '.join(map(str, DURATIONS))} minutos"}
+    if eur not in STAKES:
+        return 400, {"error": f"o saldo tem de ser {', '.join(map(str, STAKES))} €"}
+    if meme_running():
+        return 409, {"error": "Já há uma sessão a correr"}
+    MEME_DIR.mkdir(exist_ok=True)
+    win = ROOT / ".venv" / "Scripts" / "python.exe"
+    py = win if win.exists() else Path(sys.executable)
+    out = open(MEME_DIR / "run_output.txt", "w", encoding="utf-8")
+    extra = ({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | 0x00000200} if os.name == "nt"
+             else {"start_new_session": True})
+    subprocess.Popen([str(py), "-m", "deskbot", "memedesk", "--minutes", str(minutes), "--eur", str(eur)],
+                     cwd=str(ROOT), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **extra)
+    log.info("Memes session started from the app: %d min, %s EUR", minutes, eur)
+    for _ in range(40):  # wait for the new state file
+        time.sleep(0.25)
+        if meme_running():
+            break
+    return 202, {"started": True, "minutes": minutes, "eur": eur}
+
+
+def stop_memes() -> tuple[int, dict]:
+    if not meme_running():
+        return 409, {"error": "Não há sessão a correr"}
+    (MEME_DIR / "stop").write_text("stop", encoding="utf-8")
+    log.info("Memecoin session stop requested from the app")
+    return 202, {"stopping": True}
+
+
+# ------------------------------------------------------------------ backtests (cached a day)
+_bt_lock = threading.Lock()
+BT_FILE = DESKS_DIR / "backtests.json"
+
+
+def backtests(refresh: bool = False, wait: bool = False) -> dict:
+    """Cached for a day. A stale cache is returned at once and rebuilt in the background
+    (the backtests take about a minute), unless wait=True."""
+    try:
+        cached = json.loads(BT_FILE.read_text(encoding="utf-8"))
+        if not refresh and time.time() - cached.get("_at", 0) < 86400:
+            return cached
+    except (OSError, ValueError):
+        cached = {}
+    if not wait and cached:
+        threading.Thread(target=backtests, kwargs={"refresh": True, "wait": True}, daemon=True).start()
+        return cached
+    if not _bt_lock.acquire(blocking=False):
+        return cached
+    try:
+        from . import futures, stocks
+        out = {"_at": time.time()}
+        fdata = {s: (futures.klines(s, refresh=False), futures.funding(s, refresh=False)) for s in futures.SYMBOLS}
+        res = futures.backtest(fdata)
+        eq, tr = res["equity"], res["trades"]
+        out["futuros"] = {"note": "BTC, ETH, SOL, BNB e XRP desde 2020, com taxas, slippage e funding reais. "
+                                  "As moedas foram escolhidas hoje (já sabemos que sobreviveram).",
+                          "rows": _rows(eq, tr, futures.stats, [("2020-01-01", None), ("2020-01-01", "2022-12-31"),
+                                                                  ("2023-01-01", None)]),
+                          "bench": _bench(fdata["BTCUSDT"][0]["close"], futures.stats, "BTC comprar e manter")}
+        sdata = {s: stocks.history(s, refresh=False) for s in stocks.NAMES}
+        res = stocks.backtest(sdata)
+        out["acoes"] = {"note": "ETFs com dividendos desde 2008, custos de 0,05% por lado. Escolhida entre 5 "
+                                "variantes conhecidas por ser a mais estável nos dois períodos.",
+                        "rows": _rows(res["equity"], None, stocks.stats, [("2008-01-01", None),
+                                                                          ("2008-01-01", "2016-12-31"),
+                                                                          ("2017-01-01", None)]),
+                        "bench": _bench(sdata["SPY"]["close"], stocks.stats, "SPY comprar e manter", "2008-01-01")}
+        out["memes"] = {"note": "Não há histórico grátis de memecoins ao minuto, por isso esta mesa não tem "
+                                "backtest: só sessões em papel. Um resultado de 30 min é sobretudo sorte.", "rows": []}
+        DESKS_DIR.mkdir(exist_ok=True)
+        BT_FILE.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        return out
+    except Exception:
+        log.exception("desk backtests failed")
+        return cached
+    finally:
+        _bt_lock.release()
+
+
+def _rows(eq, trades, stats, periods):
+    rows = []
+    for a, b in periods:
+        e = eq[(eq.index >= pd.Timestamp(a)) & (eq.index <= pd.Timestamp(b or "2100-01-01"))]
+        st = stats(e)
+        rows.append({"period": f"{a[:4]}–{b[:4]}" if b else f"desde {a[:4]}", "cagr": st["cagr"],
+                     "max_drawdown": st["max_drawdown"], "sharpe": st["sharpe"]})
+    return rows
+
+
+def _bench(close, stats, label, start="2020-01-01"):
+    c = close[close.index >= pd.Timestamp(start)]
+    st = stats(c)
+    return {"label": label, "cagr": st["cagr"], "max_drawdown": st["max_drawdown"], "sharpe": st["sharpe"]}
+
+
+# ------------------------------------------------------------------ normalised views
+def _mult(eq, start):
+    return eq / start if start else 1.0
+
+
+def desk(name: str, bt: dict | None = None) -> dict:
+    meta = META[name]
+    out = {"name": name, **meta, "backtest": (bt or {}).get(name)}
+    if name == "memes":
+        return {**out, **_memes()}
+    st = read_state(name)
+    if not st:
+        return {**out, "exists": False, "status": "idle", "rules": [], "positions": [], "trades": [], "log": [],
+                "curve": [], "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
+    rate = st["eur_usd"]
+    positions = []
+    for q in st.get("positions", []):
+        side = q.get("side", 1)
+        last = q.get("last", q["entry"])
+        if name == "futuros":
+            pnl = q["qty"] * side * (last - q["entry"]) - q.get("fees_in", 0) - q.get("funding", 0)
+            value = q["qty"] * last
+        else:
+            pnl = q["qty"] * (last - q["entry"])
+            value = q["qty"] * last
+        positions.append({"symbol": q["symbol"].replace("USDT", ""), "name": q.get("name", ""),
+                          "side": ("long" if side == 1 else "short") if name == "futuros" else "",
+                          "lev": q.get("lev"), "value_eur": value / rate, "pnl_eur": pnl / rate,
+                          "pct": side * (last / q["entry"] - 1), "entry": q["entry"], "last": last,
+                          "stop": q.get("stop"), "liq": q.get("liq"), "opened": q.get("opened")})
+    paused = bool(controls().get(name, {}).get("paused"))
+    trades = [{"symbol": t["symbol"].replace("USDT", ""), "side": "long" if t.get("side", 1) == 1 else "short",
+               "pnl_eur": t["pnl_eur"], "pct": t.get("pct"), "why": t.get("why"), "closed": t.get("closed")}
+              for t in st.get("trades", [])][::-1]
+    return {**out, "exists": True, "status": "paused" if paused else "live", "paused": paused,
+            "started": st["started"], "updated": st.get("updated"), "start_eur": st["start_eur"],
+            "equity_eur": st.get("equity_eur", st["start_eur"]), "positions": positions, "trades": trades[:50],
+            "log": st.get("events", [])[-80:][::-1], "curve": st.get("curve", [])[-1500:],
+            "ticker": st.get("ticker", []), "rules": st.get("extra", {}).get("rules", []),
+            "extra": {k: v for k, v in st.get("extra", {}).items() if k in ("ranking", "month")}}
+
+
+def _memes() -> dict:
+    from .memetest import MemeParams
+    try:
+        st = json.loads((MEME_DIR / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = None
+    running = meme_running()
+    p = MemeParams()
+    rules = [f"Scanner: pools novos da PumpSwap e em alta; corta liquidez < $40 000, +80% numa hora, pool < 10 min",
+             "Auditor: mint e freeze revogados, top 10 holders < 25%, não é honeypot, há vendas, liquidez ≥ $40 000",
+             "Analyst: ainda a negociar agora, compradores reais e diferentes, não persegue a vela; nota ≥ 70",
+             f"Executor: a melhor nota primeiro, 1 compra a cada 2 min, {p.stack_pct:.0%} do saldo, no máx. 2% da liquidez e 5 posições",
+             "Risk: preço a cada 15 s; stop -6%, trailing a partir de +20% que vende 12% abaixo do máximo",
+             "Custos de 1% por lado mais o impacto no pool; no fim da sessão vende tudo ao último preço"]
+    from . import memedesk
+    rules = ["TRENDS: pools em alta e moedas que saíram do pump.fun (GeckoTerminal); corta liquidez < $40 000, +80% numa hora, pool < 10 min",
+             "SMARTS: baleias — compras de $500 ou mais nos últimos 30 min; precisa de 3 baleias diferentes e mais compras do que vendas",
+             "DEBATE: 5 votos bull/bear e a equipa de risco (mint e freeze revogados, top 10 < 25%, sem honeypot, há vendas); precisa de risco ok e 4 bulls",
+             "ROUTER: cotação real da Jupiter para o tamanho do trade; recusa mais de 2% de impacto",
+             "EXEC: a melhor nota primeiro, 1 compra a cada 2 min, 8% do saldo, no máx. 5 posições; preço a cada 5 s; stop −8%, trailing a partir de +20% (vende 12% abaixo do máximo)",
+             "CORE: só compra quando os 5 concordam. Tudo em papel: nenhuma carteira, nenhuma ordem real"]
+    repos = [{"agent": a, "repo": memedesk.REPOS[a][0], "role": memedesk.REPOS[a][1]} for a in memedesk.AGENTS]
+    base = {"durations": list(DURATIONS), "stakes": list(STAKES), "rules": rules, "running": running, "repos": repos}
+    if not st:
+        return {**base, "exists": False, "status": "idle", "positions": [], "trades": [], "log": [], "curve": [],
+                "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
+    rate = st.get("eur_usd") or 1.0
+    cost = st["p"]["cost_per_side"]
+    positions = [{"symbol": q["coin"], "name": q["name"], "side": "", "value_eur": q["qty"] * q["last"] * (1 - cost) / rate,
+                  "pnl_eur": (q["qty"] * q["last"] * (1 - cost) - q["cost_usd"]) / rate,
+                  "pct": q["qty"] * q["last"] * (1 - cost) / q["cost_usd"] - 1, "entry": q["raw_entry"],
+                  "last": q["last"], "stop": q["raw_entry"] * (1 - st["p"]["stop_pct"]), "trail_on": q["trail_on"],
+                  "opened": q["opened"], "mint": q.get("mint")} for q in st.get("positions", [])]
+    trades = [{"symbol": t["coin"], "side": "", "pnl_eur": t["pnl_eur"], "pct": t["pct"], "why": t["reason"],
+               "closed": t["closed"], "peak": t.get("peak_move"), "mint": t.get("mint")}
+              for t in st.get("trades", [])][::-1]
+    events = st.get("events", [])
+    seen, ticker = set(), []
+    for e in reversed(events):
+        if e.get("agent") == "Scanner" and "h1_pct" in e and e["coin"] not in seen:
+            seen.add(e["coin"])
+            ticker.append({"symbol": e["coin"], "pct": (e.get("h1_pct") or 0) / 100})
+        if e.get("agent") == "TRENDS" and e.get("verdict") in ("pass", "kill") and e["coin"] not in seen:
+            import re as _re
+            m = _re.search(r"([+-]?\d+)% 1h|\+(\d+)% em 1h", e.get("reason", ""))
+            if m:
+                seen.add(e["coin"])
+                ticker.append({"symbol": e["coin"], "pct": float(m.group(1) or m.group(2)) / 100})
+        if len(ticker) >= 12:
+            break
+    eq = st.get("equity_eur", st.get("start_eur"))
+    finished = bool(st.get("finished")) or not running
+    counts = st.get("counts", {})
+    recap = None
+    if finished and st.get("started"):
+        mins = (datetime.fromisoformat(st["ends"]) - datetime.fromisoformat(st["started"])).total_seconds() / 60
+        wins = [t for t in trades if t["pnl_eur"] > 0]
+        best = max(trades, key=lambda t: t["pnl_eur"], default=None)
+        worst = min(trades, key=lambda t: t["pnl_eur"], default=None)
+        recap = {"minutes": round(mins), "start_eur": st["start_eur"], "end_eur": eq, "trades": len(trades),
+                 "wins": len(wins), "coins_seen": st.get("pools_seen", 0),
+                 "best": best and {"symbol": best["symbol"], "pnl_eur": best["pnl_eur"]},
+                 "worst": worst and {"symbol": worst["symbol"], "pnl_eur": worst["pnl_eur"]},
+                 "started": st["started"], "ended": st["ends"],
+                 "win_rate": len(wins) / len(trades) if trades else None, "stop_pct": st["p"]["stop_pct"]}
+    return {**base, "exists": True, "status": "live" if running else "finished", "started": st["started"],
+            "ends": st["ends"], "start_eur": st["start_eur"], "equity_eur": eq, "positions": positions,
+            "trades": trades, "log": events[-80:][::-1], "ticker": ticker, "counts": counts,
+            "ready": st.get("ready", []), "pools_seen": st.get("pools_seen", 0),
+            "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap,
+            "mode": st.get("mode", "classic"), "agents": st.get("agents", {}),
+            "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
+
+
+def overview(bt: dict | None = None) -> dict:
+    items = []
+    for name in ("memes", "futuros", "acoes"):
+        d = desk(name, bt)
+        curve = d.get("curve") or []
+        step = max(1, len(curve) // 60)
+        items.append({k: d.get(k) for k in ("name", "title", "subtitle", "blurb", "color", "mode", "status",
+                                            "start_eur", "equity_eur", "started", "ends")}
+                     | {"positions": len(d.get("positions") or []), "trades": len(d.get("trades") or []),
+                        "spark": [v for _, v in curve[::step]][-60:]})
+    return {"desks": items, "now": datetime.now(timezone.utc).isoformat()}
+
+
+def pause(name: str, paused: bool) -> tuple[int, dict]:
+    if name not in ("futuros", "acoes"):
+        return 400, {"error": "só Futuros e Ações têm pausa (Memecoins para-se pela sessão)"}
+    return 200, set_paused(name, paused)

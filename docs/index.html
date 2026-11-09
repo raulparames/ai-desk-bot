@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Desk Bot">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>AI Desk Bot</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#ffffff;--soft:#f6f6f8;--soft-2:#eeeef2;--line:#ececf0;
+  --t1:#0b0b0f;--t2:#5f6170;--t3:#9a9cab;
+  --green:#15a34a;--green-line:#22c55e;--green-bg:#e9f9ef;--red:#dc2626;--red-bg:#fdecec;--amber:#b45309;--amber-bg:#fff4e0;
+  --violet:#7b61ff;--pink:#ff4fa3;--blue:#1e9bf0;
+  --display:-apple-system,"SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --text:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.4 var(--text);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+body{padding:calc(var(--top) + 4px) 0 calc(var(--bottom) + 28px)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:10px}
+a{color:inherit;text-decoration:none}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px}
+.mono{font-family:var(--mono)}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}
+
+/* splash */
+.splash{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;transition:opacity .35s ease}
+.splash.out{opacity:0;pointer-events:none}
+.splash img{width:96px;height:96px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+.splash b{font:700 30px var(--display);letter-spacing:-.01em}
+.splash .sub{font:12px var(--mono);color:var(--violet)}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:8px;height:52px}
+.top img{width:30px;height:30px;border-radius:8px}
+.top .nm{font-weight:700;font-size:17px}
+.chip{font:11.5px var(--mono);color:var(--violet);background:#f1eeff;border-radius:6px;padding:2px 7px}
+.back{width:44px;height:44px;margin-left:-12px;display:grid;place-items:center;font-size:26px;line-height:1;color:var(--t2)}
+.live{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--green)}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.4s ease-in-out infinite alternate}
+.live.paused{color:var(--amber)}.live.paused i{background:var(--amber);animation:none}
+.live.idle{color:var(--t3)}.live.idle i{background:var(--t3);animation:none}
+@keyframes blink{from{opacity:.35}to{opacity:1}}
+
+/* ticker */
+.tick{overflow:hidden;margin:0 -16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);white-space:nowrap;-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.tick .run{display:inline-flex;gap:18px;padding:7px 0;animation:marq 40s linear infinite}
+.tick span{display:inline-flex;align-items:center;gap:5px;font:12px var(--mono)}
+.tick span i{width:14px;height:14px;border-radius:50%;display:inline-block}
+@keyframes marq{to{transform:translateX(-50%)}}
+
+/* balance */
+.cap{font:12px var(--mono);color:var(--t3);margin:14px 0 2px}
+.bal{font:700 clamp(46px,14vw,64px)/1.05 var(--display);letter-spacing:-.025em;display:flex;align-items:baseline;flex-wrap:nowrap}
+.bal .c{color:var(--t3)}
+.meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:14px;color:var(--t2)}
+.pill{display:inline-flex;align-items:center;font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--t1);color:#fff}
+.sub2{display:flex;justify-content:space-between;align-items:center;font:12.5px var(--mono);margin-top:4px}
+
+/* chart */
+.chart{position:relative;height:200px;margin:10px -16px 0;touch-action:pan-y}
+.chart canvas{display:block;width:100%;height:100%}
+.chart .empty{position:absolute;left:16px;right:16px;top:44%;text-align:center;color:var(--t3);font-size:14px}
+.legend{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--t3);margin-top:2px}
+
+/* sections */
+.sec{margin-top:22px}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.sec-h b{font-size:15px}
+.sec-h span{font:11.5px var(--mono);color:var(--t3)}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{font:11px var(--mono);color:var(--t3);font-weight:400;text-align:right;padding:4px 0 6px}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl td{padding:9px 0;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+.tbl td .s{display:block;font:11px var(--mono);color:var(--t3)}
+.sym{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+.sym i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 9px var(--mono);color:#fff;flex:none}
+.side{font:10.5px var(--mono);font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px}
+.side.long{color:var(--green);background:var(--green-bg)}.side.short{color:var(--red);background:var(--red-bg)}
+.emptybox{color:var(--t3);font-size:13.5px;padding:14px 0;border-top:1px solid var(--line)}
+.log{border-top:1px solid var(--line);font:11.5px/1.5 var(--mono)}
+.log div{display:grid;grid-template-columns:40px 50px minmax(0,1fr);gap:6px;padding:4px 0;border-bottom:1px solid var(--soft-2)}
+.log .tm{color:var(--t3)}
+.log .tg{font-weight:700}
+.log .tg.buy{color:var(--green)}.log .tg.sell{color:var(--t1)}.log .tg.cut{color:var(--t3)}.log .tg.pass{color:var(--violet)}.log .tg.wait{color:var(--amber)}
+.log .tx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t2)}
+.log .tx b{color:var(--t1);font-weight:600}
+
+/* cards */
+.card{background:var(--soft);border-radius:18px;padding:14px}
+.recap{background:var(--bg);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 8px 28px rgba(15,15,30,.08)}
+.recap .h{display:flex;gap:10px;align-items:center}
+.recap .h img{width:34px;height:34px;border-radius:9px}
+.recap .k{font:12px var(--mono);color:var(--t3);margin-top:14px}
+.recap .v1{font:700 32px var(--display)}
+.recap .v2{font:700 36px var(--display)}
+.recap .row{display:flex;justify-content:space-between;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.tiles div{background:var(--soft);border-radius:12px;padding:8px 10px}
+.tiles span{display:block;font:11px var(--mono);color:var(--t3)}
+.tiles b{font-size:18px}
+.cta{display:block;width:100%;min-height:50px;border-radius:999px;background:var(--t1);color:#fff;font-weight:700;font-size:15px;margin-top:14px}
+.cta:disabled{opacity:.45}
+.cta.light{background:var(--soft-2);color:var(--t1)}
+.btns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.btns button{min-height:46px;border-radius:14px;background:var(--t1);color:#fff;font-weight:700}
+.rules{margin:6px 0 0;padding-left:20px;color:var(--t2);font-size:13.5px}
+.rules li{margin:5px 0}
+.bt{margin-top:10px}
+.bt td,.bt th{font-size:12.5px}
+.note{font-size:12px;color:var(--t3);margin:8px 0 0}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px}
+.switch{width:51px;height:31px;border-radius:999px;background:var(--soft-2);position:relative;flex:none;transition:background .2s}
+.switch::before{content:"";position:absolute;inset:-7px -6px}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:left .2s}
+.switch[aria-checked="true"]{background:var(--green-line)}
+.switch[aria-checked="true"]::after{left:22px}
+.msg{min-height:18px;font-size:13px;margin-top:6px}
+.msg.err{color:var(--red)}
+
+/* home: desk chooser */
+.hello{font:700 30px/1.1 var(--display);margin:8px 0 2px;letter-spacing:-.01em}
+.desks{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:14px}
+.dcard{display:block;min-width:0;width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:22px;padding:14px;box-shadow:0 6px 22px rgba(15,15,30,.06)}
+.dcard .r1{display:flex;align-items:center;gap:10px}
+.dcard .r1 b{font-size:18px}
+.dcard .r1 .live{font-size:12px}
+.dcard .blurb{color:var(--t2);font-size:13px;margin:8px 0 0}
+.dcard .r2{display:flex;justify-content:space-between;align-items:flex-end;margin-top:10px;gap:10px}
+.dcard .val{font:700 26px var(--display)}
+.dcard .val .c{color:var(--t3)}
+.dcard svg{display:block}
+.dcard .stats{font:11.5px var(--mono);color:var(--t3);margin-top:2px}
+.mainbot{display:flex;justify-content:space-between;align-items:center;min-height:52px;margin-top:14px;padding:0 4px;color:var(--t2);font-size:14px;border-top:1px solid var(--line)}
+
+/* lock */
+.lock{position:fixed;inset:0;z-index:30;background:var(--bg);display:flex;flex-direction:column;justify-content:center;padding:32px;gap:10px;text-align:center}
+.lock form{width:100%;max-width:340px;margin:8px auto 0;text-align:left}
+.field{width:100%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:var(--soft);padding:0 14px;font:inherit;font-size:17px}
+.offline{margin:0 16px 8px;padding:8px 12px;border-radius:12px;background:var(--red-bg);color:var(--red);font-size:13px}
+@media (prefers-reduced-motion:reduce){.tick .run{animation:none}.tick{overflow-x:auto}.splash{transition:none}.live i{animation:none}.switch,.switch::after{transition:none}}
+</style>
+</head>
+<body>
+<div class="splash" id="splash" aria-hidden="true">
+  <img src="icon-180.png" alt="">
+  <b>AI Desk Bot</b>
+  <span class="sub">terminal · 3 mesas · papel</span>
+</div>
+<div class="offline" id="offline" role="status" hidden></div>
+
+<!-- ================= HOME: the three desks ================= -->
+<main id="v-home" class="wrap">
+  <div class="top"><img src="icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip">papel</span><span class="live idle" id="home-live"><i></i>…</span></div>
+  <h1 class="hello">Mesas</h1>
+  <div class="mono t3" style="font-size:12px" id="home-total"></div>
+  <div class="desks" id="desks"></div>
+  <p class="mainbot" style="justify-content:center">O bot principal só abre no PC</p>
+</main>
+
+<!-- ================= DESK ================= -->
+<main id="v-desk" class="wrap" hidden>
+  <div class="top"><button class="back" id="back" aria-label="Voltar às mesas">‹</button><img src="icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip" id="d-mode"></span><span class="live" id="d-live"><i></i></span></div>
+  <div class="tick" id="d-tick" aria-label="Cotações"></div>
+  <div class="cap" id="d-cap"></div>
+  <div class="bal" id="d-bal"></div>
+  <div class="meta" id="d-meta"></div>
+  <div class="sub2" id="d-sub"></div>
+  <div class="chart" id="d-chart"><canvas id="cv" role="img" aria-label="Saldo ao longo do tempo"></canvas><div class="empty" id="d-empty" hidden></div></div>
+  <div class="legend" id="d-legend"></div>
+  <div id="d-recap"></div>
+  <section class="sec"><div class="sec-h"><b id="d-pos-h">posições</b><span id="d-pos-n"></span></div><div id="d-pos"></div></section>
+  <section class="sec" id="d-trades-wrap"><div class="sec-h"><b>trades fechados</b><span id="d-trades-n"></span></div><div id="d-trades"></div></section>
+  <section class="sec"><div class="sec-h"><b>registo</b><span>● em direto</span></div><div class="log" id="d-log"></div></section>
+  <section class="sec"><div class="sec-h"><b>gestão</b><span id="d-gest-s"></span></div><div class="card" id="d-gest"></div></section>
+</main>
+
+<div class="lock" id="lock" hidden>
+  <img src="icon-180.png" alt="" style="width:72px;height:72px;border-radius:18px;margin:0 auto">
+  <h1 style="font:700 26px var(--display);margin:0">AI Desk Bot</h1>
+  <form id="login" hidden>
+    <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
+    <label for="pw" class="t2" style="display:block;margin-bottom:8px">Password</label>
+    <input class="field" id="pw" type="password" autocomplete="current-password" required minlength="6" enterkeyhint="go">
+    <button class="cta" type="submit" id="login-btn">Entrar</button>
+    <p class="msg err" id="login-msg" role="alert"></p>
+  </form>
+  <p class="t2" id="lock-nopw" hidden>Ainda não há password. Define uma no PC (painel → <b>Telemóvel</b>).</p>
+</div>
+
+<script>
+/* Remote mode: /api/... answered by the Supabase relay (PC or GitHub, whichever is running the bot). */
+(function () {
+  const URL = "https://kkawnjfowemyqkplkrma.supabase.co", KEY = "sb_publishable_oL1nYjpN8GKzuG_RuhwGgQ_DAxM06qa", H = {"apikey": KEY, "Content-Type": "application/json"};
+  const tok = () => { try { return localStorage.getItem("deskbot-token") || ""; } catch (e) { return ""; } };
+  const cache = {items: {}, since: null};
+  const reply = (code, body) => new Response(JSON.stringify(body), {status: code, headers: {"Content-Type": "application/json"}});
+  async function rpc(name, body) {
+    const r = await fetch(URL + "/rest/v1/rpc/" + name, {method: "POST", headers: H, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 403 || r.status === 401 || (j && j.message === "login needed")) { const e = new Error("login"); e.code = 401; throw e; }
+    if (!r.ok) throw new Error(j.message || r.statusText);
+    return j;
+  }
+  async function state() {
+    const j = await rpc("app_state", {p_token: tok(), p_since: cache.since});
+    Object.assign(cache.items, j.items || {});
+    cache.since = j.now;
+    return cache.items;
+  }
+  const val = (items, k) => (items[k] || {}).value;
+  const realFetch = window.fetch.bind(window);
+  window.DESKBOT_REMOTE = true;
+  window.fetch = async function (input, opts = {}) {
+    const path = typeof input === "string" ? input : input.url;
+    if (!path.startsWith("/api/")) return realFetch(input, opts);
+    const body = opts.body ? JSON.parse(opts.body) : {};
+    try {
+      if (path === "/api/login" && (opts.method || "GET") === "GET") return reply(200, {password_set: true});
+      if (path === "/api/login") {
+        const r = await realFetch(URL + "/functions/v1/login", {method: "POST", headers: H, body: JSON.stringify({password: body.password})});
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) { cache.items = {}; cache.since = null; }
+        return reply(r.status, j);
+      }
+      if (path === "/api/desks" || path.startsWith("/api/desk/")) {
+        if (opts.method === "POST") {
+          if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
+          else if (path === "/api/desk/memes/start") await rpc("app_command", {p_token: tok(), p_kind: "start_session", p_payload: body});
+          else if (path === "/api/desk/memes/stop") await rpc("app_command", {p_token: tok(), p_kind: "stop_session", p_payload: {}});
+          else return reply(404, {error: "not found"});
+          return reply(202, {queued: true});
+        }
+        const items = await state();
+        const runner = val(items, "app:runner") || {};
+        const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
+        if (!data) return reply(503, {error: "Ainda sem dados do bot"});
+        return reply(200, Object.assign({}, data, {runner}));
+      }
+      return reply(404, {error: "Só disponível no PC"});
+    } catch (e) {
+      if (e.code === 401) return reply(401, {error: "login"});
+      throw e;
+    }
+  };
+})();
+</script>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const NF = {};
+const nf = (d = 2) => NF[d] || (NF[d] = (() => { try { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: "always"}); } catch (e) { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d}); } })());
+const eur = v => v == null ? "—" : nf(2).format(v) + " €";
+const seur = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(2).format(Math.abs(v)) + " €";
+const pct = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(d).format(Math.abs(v * 100)) + "%";
+const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
+const hhmm = iso => iso ? new Date(iso).toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"}) : "—";
+function when(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso), n = new Date();
+  return d.toDateString() === n.toDateString() ? hhmm(iso) : d.toLocaleDateString("pt-PT", {day: "2-digit", month: "2-digit"}) + " " + hhmm(iso);
+}
+function bigMoney(v) {  // "1 000" + grey ",00 €"
+  const s = eur(v), i = s.lastIndexOf(",");
+  return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<span class="c">${esc(s.slice(i))}</span>`;
+}
+
+/* ------------------------------------------------------------ token + login (same as the other pages) */
+(function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
+let TOKEN = store.get("deskbot-token") || "";
+async function api(path, opts = {}) {
+  let r;
+  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {"X-Desk-Token": TOKEN} : {});
+  try { r = await fetch(path, Object.assign({}, opts, {headers})); }
+  catch (e) { const err = new Error("sem ligação"); err.offline = true; throw err; }
+  if (r.status === 401) { showLock(); const err = new Error("sem chave"); err.locked = true; throw err; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+async function showLock() {
+  $("#lock").hidden = false;
+  let has = false;
+  try { has = (await (await fetch("/api/login")).json()).password_set; } catch (e) {}
+  $("#login").hidden = !has; $("#lock-nopw").hidden = has;
+}
+$("#login").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("#login-btn").disabled = true; $("#login-msg").textContent = "";
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("#pw").value})});
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.token) throw new Error(b.error || "Não deu para entrar.");
+    TOKEN = b.token; store.set("deskbot-token", TOKEN); $("#pw").value = ""; $("#lock").hidden = true; route();
+  } catch (err) { $("#login-msg").textContent = err.message; }
+  $("#login-btn").disabled = false;
+});
+
+/* ------------------------------------------------------------ blobs (our agent faces, in each desk's colour) */
+const BLOB = {
+  memes: "M20 4c1.4 0 2.6.8 3.3 2l12 21c1.5 2.6-.4 6-3.4 6H8.1c-3 0-4.9-3.4-3.4-6l12-21c.7-1.2 1.9-2 3.3-2z",
+  futuros: "M20 3l14 8v16l-14 8-14-8V11z",
+  acoes: "M20 4a16 16 0 1 1 0 32 16 16 0 0 1 0-32z",
+};
+function blob(name, color, size = 40) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><path d="${BLOB[name]}" fill="${color}"/><ellipse cx="15.5" cy="20" rx="3" ry="3.8" fill="#fff"/><ellipse cx="24.5" cy="20" rx="3" ry="3.8" fill="#fff"/><circle cx="16.2" cy="21" r="1.6" fill="#0b0b0f"/><circle cx="25.2" cy="21" r="1.6" fill="#0b0b0f"/></svg>`;
+}
+const SYM_COLORS = ["#f7931a", "#627eea", "#14f195", "#f3ba2f", "#23292f", "#ff4fa3", "#7b61ff", "#1e9bf0", "#22c55e", "#f97316", "#64748b", "#e11d48"];
+function symColor(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return SYM_COLORS[h % SYM_COLORS.length]; }
+const symDot = s => `<i style="background:${symColor(s)}" aria-hidden="true">${esc(String(s).slice(0, 3))}</i>`;
+function spark(vals, start, w = 120, h = 36) {
+  if (!vals || vals.length < 2) return `<svg width="${w}" height="${h}" aria-hidden="true"><line x1="0" x2="${w}" y1="${h / 2}" y2="${h / 2}" stroke="#d4d4dc" stroke-dasharray="3 4"/></svg>`;
+  const lo = Math.min(start, ...vals), hi = Math.max(start, ...vals) || 1, rng = (hi - lo) || 1;
+  const X = i => i / (vals.length - 1) * w, Y = v => h - 3 - (v - lo) / rng * (h - 6);
+  const up = vals[vals.length - 1] >= start;
+  return `<svg width="${w}" height="${h}" aria-hidden="true"><line x1="0" x2="${w}" y1="${Y(start)}" y2="${Y(start)}" stroke="#d4d4dc" stroke-dasharray="3 4"/><polyline fill="none" stroke="${up ? "#22c55e" : "#dc2626"}" stroke-width="2" stroke-linejoin="round" points="${vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}"/></svg>`;
+}
+const STATUS = {live: ["", "Live"], paused: ["paused", "em pausa"], finished: ["idle", "terminada"], idle: ["idle", "parada"]};
+const liveTag = st => { const [c, t] = STATUS[st] || STATUS.idle; return `<span class="live ${c}"><i></i>${t}</span>`; };
+
+/* ------------------------------------------------------------ routing */
+const S = {desk: null, d: null, timer: null, lastOk: null};
+function route() {
+  const m = location.hash.match(/^#\/(memes|futuros|acoes)$/);
+  clearInterval(S.timer);
+  if (m) { S.desk = m[1]; $("#v-home").hidden = true; $("#v-desk").hidden = false; window.scrollTo(0, 0); loadDesk(); S.timer = setInterval(() => !document.hidden && loadDesk(true), S.desk === "memes" ? 10000 : 30000); }
+  else { S.desk = null; $("#v-desk").hidden = true; $("#v-home").hidden = false; loadHome(); S.timer = setInterval(() => !document.hidden && loadHome(), 20000); }
+}
+window.addEventListener("hashchange", route);
+$("#back").addEventListener("click", () => { location.hash = "#/"; });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) (S.desk ? loadDesk(true) : loadHome()); });
+function offline(e) {
+  if (e.locked) return;
+  const el = $("#offline"); el.hidden = false;
+  el.textContent = e.offline ? `Sem ligação ao bot · última atualização ${S.lastOk ? hhmm(new Date(S.lastOk).toISOString()) : "—"} · nova tentativa em breve` : "Erro: " + e.message;
+}
+const ok = () => { S.lastOk = Date.now(); $("#offline").hidden = true; };
+
+/* ------------------------------------------------------------ home */
+async function loadHome() {
+  let d;
+  try { d = await api("/api/desks"); ok(); } catch (e) { return offline(e); }
+  const total = d.desks.reduce((a, x) => a + (x.equity_eur || 0), 0), start = d.desks.reduce((a, x) => a + (x.start_eur || 0), 0);
+  $("#home-total").innerHTML = `${esc(eur(total))} em papel · <span class="${cls(total - start)}">${esc(seur(total - start))}</span> desde o início`;
+  const anyLive = d.desks.some(x => x.status === "live");
+  $("#home-live").className = "live" + (anyLive ? "" : " idle"); $("#home-live").innerHTML = `<i></i>${anyLive ? "Live" : "parado"}`;
+  $("#desks").innerHTML = d.desks.map(x => {
+    const diff = (x.equity_eur || 0) - (x.start_eur || 0);
+    return `<a class="dcard" href="${x.name === "memes" ? "memes.html" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
+      <div class="r1">${blob(x.name, x.color, 38)}<div style="min-width:0"><b>${esc(x.title)}</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.subtitle)}</div></div>${liveTag(x.status)}</div>
+      <p class="blurb">${esc(x.blurb)}</p>
+      <div class="r2"><div><div class="val">${bigMoney(x.equity_eur)}</div><div class="stats"><span class="${cls(diff)}">${esc(seur(diff))}</span> · ${x.positions} abertas · ${x.trades} trades</div></div>${spark(x.spark, x.start_eur)}</div></a>`;
+  }).join("");
+}
+
+/* ------------------------------------------------------------ desk */
+async function loadDesk(quiet) {
+  let d;
+  try { d = await api("/api/desk/" + S.desk); ok(); } catch (e) { return offline(e); }
+  S.d = d; renderDesk(d);
+}
+function renderDesk(d) {
+  $("#d-mode").textContent = d.mode;
+  const [lc, lt] = STATUS[d.status] || STATUS.idle;
+  $("#d-live").className = "live " + lc; $("#d-live").innerHTML = `<i></i>${esc(lt)}`;
+  // ticker
+  const items = (d.ticker || []).map(t => `<span><i style="background:${symColor(t.symbol)}" aria-hidden="true"></i><b>${esc(t.symbol)}</b><span class="${cls(t.pct)}">${esc(pct(t.pct, 1))}</span></span>`).join("");
+  $("#d-tick").innerHTML = items ? `<div class="run">${items}${items}</div>` : `<div class="run"><span class="t3">sem cotações ainda</span></div>`;
+  // headline
+  const eq = d.equity_eur, start = d.start_eur, diff = eq - start;
+  const since = d.started ? `desde ${when(d.started)}` : "ainda não arrancou";
+  $("#d-cap").textContent = `${d.subtitle} · ${since}`;
+  $("#d-bal").innerHTML = bigMoney(eq);
+  const trades = d.trades || [], wins = trades.filter(t => t.pnl_eur > 0).length;
+  $("#d-meta").innerHTML = `<span>início ${esc(eur(start))}</span><span>·</span><span>${trades.length} trades</span><span class="pill">${nf(2).format(eq / (start || 1))}×</span>`;
+  const pos = d.positions || [], winning = pos.filter(p => p.pnl_eur > 0).length;
+  $("#d-sub").innerHTML = `<span class="${cls(diff)}">${esc(seur(diff))} · ${pos.length ? `${winning} de ${pos.length} abertas a ganhar` : trades.length ? `${wins} de ${trades.length} trades a ganhar` : "sem posições"}</span><span class="t3">${esc(hhmm(d.updated || new Date().toISOString()))}</span>`;
+  drawChart(d);
+  // recap (memecoin session finished) or nothing
+  $("#d-recap").innerHTML = d.name === "memes" ? memeSession(d) : "";
+  // positions
+  const head = {memes: "moedas na mesa", futuros: "posições", acoes: "carteira"}[d.name];
+  $("#d-pos-h").textContent = head;
+  $("#d-pos-n").textContent = `${pos.length} abertas`;
+  $("#d-pos").innerHTML = pos.length ? `<table class="tbl"><thead><tr><th>${d.name === "acoes" ? "ETF" : "moeda"}</th><th>${d.name === "futuros" ? "alav." : "peso"}</th><th>valor</th><th>resultado</th></tr></thead><tbody>${pos.map(p => {
+      const weight = d.name === "futuros" ? `${nf(2).format(p.lev || 0)}x` : pct(p.value_eur / (eq || 1), 0).replace("+", "");
+      return `<tr><td><span class="sym">${symDot(p.symbol)}${esc(p.symbol)}${p.side ? `<span class="side ${p.side}">${p.side.toUpperCase()}</span>` : ""}</span><span class="s">${esc(p.name || (p.stop ? "stop " + price(p.stop) : ""))}${p.trail_on ? " · trailing" : ""}</span></td><td>${esc(weight)}</td><td>${esc(eur(p.value_eur))}</td><td class="${cls(p.pnl_eur)}">${esc(seur(p.pnl_eur))}<span class="s">${esc(pct(p.pct))}</span></td></tr>`;
+    }).join("")}</tbody></table>` : `<div class="emptybox">${esc(emptyPos(d))}</div>`;
+  // closed trades
+  $("#d-trades-n").textContent = trades.length ? `${wins} a ganhar` : "";
+  $("#d-trades").innerHTML = trades.length ? `<table class="tbl"><tbody>${trades.slice(0, 12).map(t => `<tr><td><span class="sym">${symDot(t.symbol)}${esc(t.symbol)}${d.name === "futuros" ? `<span class="side ${t.side}">${t.side.toUpperCase()}</span>` : ""}</span><span class="s">${esc(t.why || "")} · ${esc(when(t.closed))}</span></td><td class="${cls(t.pnl_eur)}">${esc(seur(t.pnl_eur))}<span class="s">${esc(pct(t.pct))}</span></td></tr>`).join("")}</tbody></table>` : `<div class="emptybox">Ainda nenhum trade fechado.</div>`;
+  // log
+  const TAG = {buy: ["buy", "COMPRA"], sell: ["sell", "VENDA"], kill: ["cut", "CORTA"], cut: ["cut", "CORTA"], reject: ["cut", "REJEITA"], skip: ["cut", "SALTA"], pass: ["pass", "PASSA"], wait: ["wait", "FILA"]};
+  const log = d.log || [];
+  $("#d-log").innerHTML = log.length ? log.slice(0, 40).map(e => { const [c, t] = TAG[e.verdict] || ["cut", String(e.verdict || "").toUpperCase()]; return `<div><span class="tm">${esc(hhmm(e.ts))}</span><span class="tg ${c}">${esc(t)}</span><span class="tx"><b>${esc(e.coin)}</b> ${esc(e.agent)} · ${esc(e.reason)}</span></div>`; }).join("") : `<div><span class="tm">—</span><span class="tg cut">…</span><span class="tx">${esc(d.name === "memes" ? "Arranca uma sessão em baixo para os agentes começarem." : "Os agentes registam aqui cada decisão.")}</span></div>`;
+  // management
+  $("#d-gest-s").textContent = d.name === "memes" ? "sessões" : "regras e histórico";
+  $("#d-gest").innerHTML = gestao(d);
+  wireGestao(d);
+}
+const price = v => v == null ? "—" : v >= 1000 ? nf(0).format(v) : v >= 1 ? nf(2).format(v) : new Intl.NumberFormat("pt-PT", {maximumSignificantDigits: 4}).format(v);
+function emptyPos(d) {
+  if (d.name === "memes") return d.running ? "Ainda nenhuma moeda passou todos os agentes." : "Sem sessão a correr.";
+  if (d.name === "futuros") return d.paused ? "Mesa em pausa: não abre posições novas." : "Sem posições: à espera de um breakout de 4 h (long ou short).";
+  return "Em cash: à espera da revisão mensal.";
+}
+function memeSession(d) {
+  const r = d.recap;
+  if (!r || d.running) return "";
+  const diff = r.end_eur - r.start_eur;
+  return `<div class="recap" style="margin-top:16px"><div class="h"><img src="icon-180.png" alt=""><div><b>Resumo da sessão</b><div class="mono t3" style="font-size:11.5px">${r.minutes} min · ${esc(when(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+    <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
+    <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="pill">${nf(2).format(r.end_eur / (r.start_eur || 1))}×</span></div>
+    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>a ganhar</span><b>${r.wins}</b></div><div><span>moedas vistas</span><b>${r.coins_seen}</b></div></div>
+    <p class="note" style="font-size:12.5px;color:var(--t2)">${r.best ? `Melhor: ${esc(r.best.symbol)} ${esc(seur(r.best.pnl_eur))}. Pior: ${esc(r.worst.symbol)} ${esc(seur(r.worst.pnl_eur))}. ` : "Nenhuma moeda passou todos os agentes. "}Stop −6% em cada trade. Papel: nenhuma ordem real.</p>
+    <button class="cta" data-start="30">Nova sessão de 30 min</button></div>`;
+}
+function gestao(d) {
+  const rules = `<ol class="rules">${(d.rules || []).map(r => `<li>${esc(r)}</li>`).join("")}</ol>`;
+  const bt = d.backtest;
+  const btHtml = bt ? `${bt.rows && bt.rows.length ? `<table class="tbl bt"><thead><tr><th>backtest</th><th>por ano</th><th>queda máx.</th><th>sharpe</th></tr></thead><tbody>${bt.rows.map(r => `<tr><td>${esc(r.period)}</td><td class="${cls(r.cagr)}">${esc(pct(r.cagr))}</td><td>${esc(pct(r.max_drawdown, 0))}</td><td>${nf(2).format(r.sharpe)}</td></tr>`).join("")}${bt.bench ? `<tr><td class="t3">${esc(bt.bench.label)}</td><td class="t3">${esc(pct(bt.bench.cagr))}</td><td class="t3">${esc(pct(bt.bench.max_drawdown, 0))}</td><td class="t3">${nf(2).format(bt.bench.sharpe)}</td></tr>` : ""}</tbody></table>` : ""}<p class="note">${esc(bt.note)}</p>` : "";
+  let ctl = "";
+  if (d.name === "memes") {
+    ctl = d.running
+      ? `<div class="switch-row"><span><b>Sessão a correr</b><br><span class="t3" style="font-size:13px">termina às ${esc(hhmm(d.ends))}</span></span></div><button class="cta light" id="g-stop">Parar a sessão agora</button>`
+      : `<b>Começar uma sessão em papel com 1 000 €</b><div class="btns">${(d.durations || []).map(m => `<button data-start="${m}">${m < 60 ? m + " min" : m / 60 + " h"}</button>`).join("")}</div>`;
+  } else {
+    ctl = `<div class="switch-row"><span><b>Mesa ativa</b><br><span class="t3" style="font-size:13px">Em pausa não abre posições novas; os stops continuam.</span></span><button class="switch" id="g-pause" role="switch" aria-checked="${!d.paused}" aria-label="Mesa ativa"></button></div>`;
+  }
+  return `${ctl}<div class="msg" id="g-msg" role="status"></div><div style="margin-top:10px"><b style="font-size:14px">Regras</b>${rules}</div>${btHtml}`;
+}
+function wireGestao(d) {
+  document.querySelectorAll("[data-start]").forEach(b => b.onclick = async () => {
+    document.querySelectorAll("[data-start]").forEach(x => x.disabled = true);
+    try { await api("/api/desk/memes/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({minutes: +b.dataset.start})}); await loadDesk(); }
+    catch (e) { const m = $("#g-msg"); if (m) { m.className = "msg err"; m.textContent = e.message; } document.querySelectorAll("[data-start]").forEach(x => x.disabled = false); }
+  });
+  const stop = $("#g-stop");
+  if (stop) stop.onclick = async () => { stop.disabled = true; try { await api("/api/desk/memes/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); $("#g-msg").textContent = "A fechar as posições e a escrever o resumo…"; setTimeout(() => loadDesk(), 20000); } catch (e) { $("#g-msg").className = "msg err"; $("#g-msg").textContent = e.message; stop.disabled = false; } };
+  const sw = $("#g-pause");
+  if (sw) sw.onclick = async () => { sw.disabled = true; try { await api("/api/desk/pause", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: d.name, paused: sw.getAttribute("aria-checked") === "true"})}); await loadDesk(); } catch (e) { $("#g-msg").className = "msg err"; $("#g-msg").textContent = e.message; } sw.disabled = false; };
+}
+
+/* ------------------------------------------------------------ chart (light) */
+function drawChart(d) {
+  const box = $("#d-chart"), cv = $("#cv");
+  const W = box.clientWidth, H = box.clientHeight, dpr = devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const pts = (d.curve || []).filter(p => p[1] != null);
+  const start = d.start_eur;
+  $("#d-empty").hidden = pts.length >= 2;
+  $("#d-empty").textContent = d.name === "memes" && !d.exists ? "Ainda não houve sessões" : "À espera do primeiro movimento";
+  const padL = 16, padR = 16, top = 16, bot = 10;
+  if (pts.length < 2) {
+    g.strokeStyle = "#d4d4dc"; g.setLineDash([3, 5]); g.beginPath(); g.moveTo(padL, H * .6); g.lineTo(W - padR, H * .6); g.stroke(); g.setLineDash([]);
+    $("#d-legend").innerHTML = ""; return;
+  }
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  let lo = Math.min(start, ...pts.map(p => p[1])), hi = Math.max(start, ...pts.map(p => p[1]));
+  if (hi - lo < start * 0.002) { lo -= start * 0.001; hi += start * 0.001; }
+  const X = t => padL + (t - x0) / ((x1 - x0) || 1) * (W - padL - padR), Y = v => top + (hi - v) / (hi - lo) * (H - top - bot);
+  const up = pts[pts.length - 1][1] >= start, col = up ? "#22c55e" : "#dc2626";
+  g.strokeStyle = "#d4d4dc"; g.setLineDash([3, 5]); g.lineWidth = 1; g.beginPath(); g.moveTo(padL, Y(start)); g.lineTo(W - padR, Y(start)); g.stroke(); g.setLineDash([]);
+  const grad = g.createLinearGradient(0, top, 0, H); grad.addColorStop(0, up ? "rgba(34,197,94,.22)" : "rgba(220,38,38,.16)"); grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = grad; g.fill();
+  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.strokeStyle = col; g.lineWidth = 2.4; g.lineJoin = "round"; g.stroke();
+  const lp = pts[pts.length - 1];
+  g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 5.5, 0, Math.PI * 2); g.fillStyle = "#fff"; g.fill(); g.strokeStyle = col; g.lineWidth = 2.4; g.stroke();
+  $("#d-legend").innerHTML = `<span>${esc(when(new Date(x0).toISOString()))}</span><span>— saldo · - - início</span><span>${esc(hhmm(new Date(x1).toISOString()))}</span>`;
+}
+new ResizeObserver(() => { if (S.d && S.desk) drawChart(S.d); }).observe($("#d-chart"));
+
+/* ------------------------------------------------------------ start */
+(function boot() {
+  const splash = $("#splash");
+  const hide = () => { splash.classList.add("out"); setTimeout(() => splash.hidden = true, REDUCED ? 0 : 400); };
+  setTimeout(hide, REDUCED ? 200 : 1100);
+  route();
+})();
+</script>
+</body>
+</html>
