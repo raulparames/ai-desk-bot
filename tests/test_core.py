@@ -354,6 +354,7 @@ def test_memes_mode_buys_only_when_all_five_agree(monkeypatch, tmp_path):
     monkeypatch.setattr(memetest, "OUT", tmp_path)
     monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
     desk = memedesk.MemesDesk(30, 110)
+    desk.gmgn.key = ""   # no GMGN calls in tests, whatever is in .env
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     whales = [{"attributes": {"block_timestamp": now, "kind": "buy", "tx_from_address": f"w{i}",
                               "volume_in_usd": "900"}} for i in range(4)]
@@ -378,3 +379,63 @@ def test_memes_mode_buys_only_when_all_five_agree(monkeypatch, tmp_path):
     monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": sellers} if "/trades" in path else info)
     desk.auditor("POOL2", pool, "$BRICK")
     assert desk.d.seen["POOL2"] == "smarts" and len(desk.ready) == 1
+
+
+def test_memes_gmgn_smart_money_can_pass_smarts_and_rug_score_blocks(monkeypatch, tmp_path):
+    """With a GMGN key: smart money + KOLs can carry SMARTS, and a high rug score stops DEBATE."""
+    from deskbot import memetest, memedesk
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    desk = memedesk.MemesDesk(30, 110, "fomo")
+    assert desk.d.venue == "fomo"
+    desk.gmgn.key = "test"
+    gm = {"smart": 3, "kol": 1, "rug": 0.1, "wash": False, "bundler": 0.05, "rat": 0.02, "top10": 0.2, "insider": 0}
+    monkeypatch.setattr(desk.gmgn, "token", lambda mint: dict(gm))
+    monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": []})   # no whale trades at all
+    assert desk.smarts("POOL", "$X", "MINT")["ok"] is True
+    assert "3 SM · 1 KOL" in desk.d.agents["SMARTS"]["text"]
+    gm.update(smart=0, kol=1)
+    assert desk.smarts("POOL", "$X", "MINT")["ok"] is False
+    gm.update(rug=0.6)
+    info = {"data": {"attributes": {"holders": {"distribution_percentage": {"top_10": "12"}}}}}
+    monkeypatch.setattr(desk, "_gecko", lambda path, params=None: info)
+    monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": None, "freezeAuthority": None, "decimals": 6})
+    monkeypatch.setattr(desk, "_pairs", lambda pools, session=None: {})
+    pool = {"attributes": {"reserve_in_usd": "250000", "transactions": {"h1": {"buyers": 300, "buys": 900, "sells": 400}},
+                           "volume_usd": {"m5": 9000, "h1": 90000}, "price_change_percentage": {"m5": -2, "h1": 10}}}
+    out = desk.debate("POOL", pool, "$X", "MINT")
+    assert out["ok"] is False and "rug 0,60" in desk.d.agents["DEBATE"]["text"]
+
+
+def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tmp_path):
+    """Futures terminal: top traders against us stop the trade; when all agree it opens at most the coin's leverage."""
+    from deskbot import perpdesk
+    monkeypatch.setattr(perpdesk, "OUT", tmp_path)
+    monkeypatch.setattr(perpdesk.PerpDesk, "_eur_usd", lambda self: 1.0)
+    desk = perpdesk.PerpDesk(30, 110, lev=10)
+    desk.meta = {"AAA": {"max_lev": 5, "funding": 0.0000125, "mark": 100.0, "vol": 5e8, "oi": 1e8, "day_pct": 0.02}}
+    # a steady up-trend with rising volume, 15-min and 1-hour candles
+    c15 = [{"t": i, "o": 100 + i * 0.05, "h": 100.4 + i * 0.05, "l": 99.8 + i * 0.05, "c": 100.1 + i * 0.05,
+            "v": 100 + (40 if i > 115 else 0)} for i in range(120)]
+    c15[-1]["c"] = c15[-2]["c"] + 0.05
+    h1 = [{"t": i, "o": 90 + i * 0.2, "h": 90.5 + i * 0.2, "l": 89.8 + i * 0.2, "c": 90.2 + i * 0.2, "v": 1000} for i in range(80)]
+    monkeypatch.setattr(desk, "candles", lambda coin, interval, bars: c15 if interval == "15m" else h1)
+    book = {"levels": [[{"px": "105.99", "sz": "500"}], [{"px": "106.00", "sz": "500"}]]}
+    monkeypatch.setattr(desk, "info", lambda body, session=None: book if body["type"] == "l2Book" else None)
+    desk.crowd = {"AAA": {"long": 1, "short": 6, "long_usd": 1e6, "short_usd": 9e6}}
+    desk.trends("AAA")
+    assert desk.queue and desk.queue[0][1] == 1           # TRENDS says long
+    desk.auditor(*desk.queue.pop(0))
+    assert not desk.ready and desk.d.agents["SMARTS"]["ok"] is False
+    desk.cool.clear()
+    desk.crowd = {"AAA": {"long": 6, "short": 1, "long_usd": 9e6, "short_usd": 1e6}}
+    desk.trends("AAA")
+    desk.auditor(*desk.queue.pop(0))
+    assert [r["coin"] for r in desk.ready] == ["AAA"]
+    assert any(e["agent"] == "CORE" and "5/5" in e["reason"] for e in desk.d.events)
+    desk.execute_best()
+    q = desk.d.positions[0]
+    assert q.side == 1 and q.lev == 5                     # session asked 10x, the coin allows 5x
+    assert q.liq < q.stop < q.entry                       # the stop comes before liquidation
+    desk.close(q, q.entry * 1.01, "teste")
+    assert desk.d.trades[0]["pnl_usd"] > 0 and not desk.d.positions

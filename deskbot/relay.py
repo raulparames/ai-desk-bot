@@ -33,7 +33,8 @@ log = logging.getLogger("relay")
 DEFAULT_URL = "https://kkawnjfowemyqkplkrma.supabase.co"
 DEFAULT_KEY = "sb_publishable_oL1nYjpN8GKzuG_RuhwGgQ_DAxM06qa"
 FILES = ["desks/futuros.json", "desks/acoes.json", "desks/controls.json", "desks/backtests.json",
-         "memetest/state.json"]
+         "memetest/state.json", "perpdesk/state.json"]
+SESSION_DIRS = {"memes": "memetest", "perps": "perpdesk"}
 PC_FRESH_S = 120
 POINTS = 400   # chart points sent to the phone per desk
 
@@ -138,9 +139,9 @@ def app_items(owner: str) -> dict:
     from . import desks_api
     bt = desks_api.backtests()
     items = {"app:overview": desks_api.overview(bt)}
-    for name in ("memes", "futuros", "acoes"):
+    for name in ("memes", "futuros", "acoes", "perps"):
         d = desks_api.desk(name, bt)
-        if name == "memes" and owner == "github":
+        if owner == "github" and _GH_KIND.get("desk") == name:
             d["running"] = bool(d.get("running") or _GH_SESSION.is_set())
         items[f"app:desk:{name}"] = _thin(d)
     items["app:runner"] = {"owner": owner, "host": socket.gethostname() if owner == "pc" else "github",
@@ -157,14 +158,21 @@ def run_command(cmd: dict, owner: str) -> dict:
         elif kind == "start_session":
             if owner == "github":
                 return {"code": 202, "deferred": True}
-            code, res = desks_api.start_memes(int(p.get("minutes") or 0), float(p.get("eur") or 110))
+            if p.get("desk") == "perps":
+                code, res = desks_api.start_perps(int(p.get("minutes") or 0), float(p.get("eur") or 110),
+                                                  float(p.get("lev") or 5))
+            else:
+                code, res = desks_api.start_memes(int(p.get("minutes") or 0), float(p.get("eur") or 110),
+                                                  str(p.get("venue") or "gmgn"))
         elif kind == "stop_session":
+            perps = p.get("desk") == "perps"
             if owner == "github":
-                (ROOT / "memetest").mkdir(exist_ok=True)
-                (ROOT / "memetest" / "stop").write_text("stop", encoding="utf-8")
+                folder = ROOT / SESSION_DIRS["perps" if perps else "memes"]
+                folder.mkdir(exist_ok=True)
+                (folder / "stop").write_text("stop", encoding="utf-8")
                 code, res = 202, {"stopping": True}
             else:
-                code, res = desks_api.stop_memes()
+                code, res = desks_api.stop_perps() if perps else desks_api.stop_memes()
         else:
             code, res = 400, {"error": "unknown command"}
     except Exception as exc:  # a bad command must never stop the loop
@@ -225,6 +233,7 @@ def pull_before_cycle():
 
 # ------------------------------------------------------------ the GitHub side
 _GH_SESSION = threading.Event()
+_GH_KIND: dict = {}
 
 
 def gh_cycle() -> str:
@@ -248,16 +257,23 @@ def gh_cycle() -> str:
     relay.push(app_items("github"), force=True)
     relay.push_files()
     if session:
-        _gh_session(relay, int(session.get("minutes") or 30), float(session.get("eur") or 110))
-    return "GitHub fez o ciclo" + (" e uma sessão de memes" if session else "")
+        _gh_session(relay, session)
+    return "GitHub fez o ciclo" + (f" e uma sessão de {'futuros' if session.get('desk') == 'perps' else 'memes'}"
+                                   if session else "")
 
 
-def _gh_session(relay: Relay, minutes: int, eur: float):
-    """A memes session inside the GitHub job (max ~5.5 h), pushing to the phone every 5 s."""
-    from . import memedesk
-    minutes = min(minutes, 330)
-    desk = memedesk.MemesDesk(minutes, eur)
+def _gh_session(relay: Relay, session: dict):
+    """A memes or futures session inside the GitHub job (max ~5.5 h), pushing to the phone every 5 s."""
+    minutes = min(int(session.get("minutes") or 30), 330)
+    eur = float(session.get("eur") or 110)
+    if session.get("desk") == "perps":
+        from . import perpdesk
+        desk = perpdesk.PerpDesk(minutes, eur, min(float(session.get("lev") or 5), 10))
+    else:
+        from . import memedesk
+        desk = memedesk.MemesDesk(minutes, eur, str(session.get("venue") or "gmgn"))
     done = threading.Event()
+    _GH_KIND["desk"] = "perps" if session.get("desk") == "perps" else "memes"
     _GH_SESSION.set()
 
     def pusher():

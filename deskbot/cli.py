@@ -301,6 +301,11 @@ def main(argv=None):
     md = sub.add_parser("memedesk", help="memes mode: 5-agent Solana memecoin desk in paper (like the gmgn video)")
     md.add_argument("--minutes", type=float, default=720)
     md.add_argument("--eur", type=float, default=110)
+    md.add_argument("--venue", choices=("gmgn", "fomo"), default="gmgn", help="app the coins open in (paper either way)")
+    pd = sub.add_parser("perpdesk", help="futures mode: 5-agent Hyperliquid perps desk in paper (INVO's exchange)")
+    pd.add_argument("--minutes", type=float, default=720)
+    pd.add_argument("--eur", type=float, default=110)
+    pd.add_argument("--lev", type=float, default=5, help="leverage, at most 10")
     mt = sub.add_parser("memetest", help="paper test of a Solana memecoin desk (no wallet, no orders)")
     mt.add_argument("--minutes", type=float, default=30)
     mt.add_argument("--eur", type=float, default=1000)
@@ -313,7 +318,7 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
     _setup_logging(args.verbose)
     {"backtest": cmd_backtest, "scan": cmd_scan, "desk": cmd_desk, "run": cmd_run,
-     "status": cmd_status, "review": cmd_review, "dashboard": cmd_dashboard, "memetest": cmd_memetest, "desks": cmd_desks, "memedesk": cmd_memedesk,
+     "status": cmd_status, "review": cmd_review, "dashboard": cmd_dashboard, "memetest": cmd_memetest, "desks": cmd_desks, "memedesk": cmd_memedesk, "perpdesk": cmd_perpdesk,
      "gh-cycle": cmd_gh_cycle}[args.cmd](args)
 
 
@@ -335,7 +340,15 @@ def cmd_memedesk(args):
     fh = logging.FileHandler(ROOT / "logs" / "memetest.log", encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger("memetest").addHandler(fh)
-    print(memedesk.run(args.minutes, args.eur))
+    print(memedesk.run(args.minutes, args.eur, args.venue))
+
+
+def cmd_perpdesk(args):
+    from . import perpdesk
+    fh = logging.FileHandler(ROOT / "logs" / "perpdesk.log", encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger("perpdesk").addHandler(fh)
+    print(perpdesk.run(args.minutes, args.eur, min(args.lev, 10)))
 
 
 def cmd_gh_cycle(args):

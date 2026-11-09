@@ -55,9 +55,10 @@ SHIM = """<script>
       }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {
+          const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));
           if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
-          else if (path === "/api/desk/memes/start") await rpc("app_command", {p_token: tok(), p_kind: "start_session", p_payload: body});
-          else if (path === "/api/desk/memes/stop") await rpc("app_command", {p_token: tok(), p_kind: "stop_session", p_payload: {}});
+          else if (ses) await rpc("app_command", {p_token: tok(), p_kind: ses[2] === "start" ? "start_session" : "stop_session",
+                                                  p_payload: Object.assign({}, ses[2] === "start" ? body : {}, {desk: ses[1]})});
           else return reply(404, {error: "not found"});
           return reply(202, {queued: true});
         }
@@ -82,6 +83,7 @@ def rewrite(html: str) -> str:
     html = html.replace('href="/manifest.webmanifest"', 'href="manifest.webmanifest"')
     html = html.replace('"/icon-180.png"', '"icon-180.png"').replace("'/icon-180.png'", "'icon-180.png'")
     html = html.replace('href="/app"', 'href="index.html"').replace('"/memes"', '"memes.html"')
+    html = html.replace('"/perps"', '"perps.html"').replace('href="/app#/futuros"', 'href="index.html#/futuros"')
     html = re.sub(r'<a class="mainbot" href="/m">.*?</a>',
                   '<p class="mainbot" style="justify-content:center">O bot principal só abre no PC</p>', html, flags=re.S)
     return html.replace("<script>", SHIM % {"url": json.dumps(URL), "key": json.dumps(KEY)} + "<script>", 1)
@@ -92,7 +94,9 @@ def main():
         shutil.rmtree(OUT)
     OUT.mkdir()
     (OUT / "index.html").write_text(rewrite((STATIC / "app.html").read_text(encoding="utf-8")), encoding="utf-8")
-    (OUT / "memes.html").write_text(rewrite((STATIC / "memes.html").read_text(encoding="utf-8")), encoding="utf-8")
+    terminal = rewrite((STATIC / "memes.html").read_text(encoding="utf-8"))
+    (OUT / "memes.html").write_text(terminal, encoding="utf-8")
+    (OUT / "perps.html").write_text(terminal, encoding="utf-8")   # same terminal; it picks the mode from its name
     for icon in ("icon-180.png", "icon-512.png"):
         shutil.copy(STATIC / icon, OUT / icon)
     manifest = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))

@@ -304,7 +304,7 @@ async function loadHome() {
   $("#home-live").className = "live" + (anyLive ? "" : " idle"); $("#home-live").innerHTML = `<i></i>${anyLive ? "Live" : "parado"}`;
   $("#desks").innerHTML = d.desks.map(x => {
     const diff = (x.equity_eur || 0) - (x.start_eur || 0);
-    return `<a class="dcard" href="${x.name === "memes" ? "/memes" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
+    return `<a class="dcard" href="${x.name === "memes" ? "/memes" : x.name === "futuros" ? "/perps" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
       <div class="r1">${blob(x.name, x.color, 38)}<div style="min-width:0"><b>${esc(x.title)}</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.subtitle)}</div></div>${liveTag(x.status)}</div>
       <p class="blurb">${esc(x.blurb)}</p>
       <div class="r2"><div><div class="val">${bigMoney(x.equity_eur)}</div><div class="stats"><span class="${cls(diff)}">${esc(seur(diff))}</span> · ${x.positions} abertas · ${x.trades} trades</div></div>${spark(x.spark, x.start_eur)}</div></a>`;

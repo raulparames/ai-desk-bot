@@ -24,6 +24,7 @@ from .paperdesk import DESKS_DIR, controls, read_state, set_paused
 
 log = logging.getLogger(__name__)
 MEME_DIR = ROOT / "memetest"
+PERP_DIR = ROOT / "perpdesk"
 DURATIONS = (5, 10, 15, 30, 120, 720)
 
 META = {
@@ -33,6 +34,9 @@ META = {
     "futuros": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
                 "subtitle": "perpétuos de cripto · long e short · velas de 4 h",
                 "blurb": "BTC, ETH, SOL, BNB e XRP. Long e short, alavancagem máxima 10x, 1% de risco por trade."},
+    "perps": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
+              "subtitle": "perpétuos da Hyperliquid · INVO · sessões de 5 min a 12 h",
+              "blurb": "Modo futuros: 5 agentes (tendência, top traders, debate, livro de ordens, execução). Long e short até 10x."},
     "acoes": {"title": "Ações", "mode": "ações", "color": "#1e9bf0",
               "subtitle": "S&P 500 com filtro de tendência · revisto todos os meses",
               "blurb": "SPY quando está acima da média de 200 dias; senão ouro ou obrigações. Sem alavancagem."},
@@ -60,37 +64,58 @@ def _alive(pid: int) -> bool:
         return False
 
 
-def meme_running() -> bool:
+def _running(folder: Path) -> bool:
     try:
-        return _alive(int((MEME_DIR / "pid").read_text().strip()))
+        return _alive(int((folder / "pid").read_text().strip()))
     except (OSError, ValueError):
         return False
 
 
+def meme_running() -> bool:
+    return _running(MEME_DIR)
+
+
+def perp_running() -> bool:
+    return _running(PERP_DIR)
+
+
 STAKES = (50, 110, 500, 1000)
+VENUES = ("gmgn", "fomo")       # where the memes app opens each coin (orders stay in paper)
+LEVERAGES = (2, 5, 10)
 
 
-def start_memes(minutes: int, eur: float = 110) -> tuple[int, dict]:
+def _check(minutes: int, eur: float) -> str:
     if minutes not in DURATIONS:
-        return 400, {"error": f"duração tem de ser {', '.join(map(str, DURATIONS))} minutos"}
+        return f"duração tem de ser {', '.join(map(str, DURATIONS))} minutos"
     if eur not in STAKES:
-        return 400, {"error": f"o saldo tem de ser {', '.join(map(str, STAKES))} €"}
-    if meme_running():
-        return 409, {"error": "Já há uma sessão a correr"}
-    MEME_DIR.mkdir(exist_ok=True)
+        return f"o saldo tem de ser {', '.join(map(str, STAKES))} €"
+    return ""
+
+
+def _spawn(folder: Path, args: list[str]):
+    folder.mkdir(exist_ok=True)
     win = ROOT / ".venv" / "Scripts" / "python.exe"
     py = win if win.exists() else Path(sys.executable)
-    out = open(MEME_DIR / "run_output.txt", "w", encoding="utf-8")
+    out = open(folder / "run_output.txt", "w", encoding="utf-8")
     extra = ({"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | 0x00000200} if os.name == "nt"
              else {"start_new_session": True})
-    subprocess.Popen([str(py), "-m", "deskbot", "memedesk", "--minutes", str(minutes), "--eur", str(eur)],
-                     cwd=str(ROOT), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **extra)
-    log.info("Memes session started from the app: %d min, %s EUR", minutes, eur)
+    subprocess.Popen([str(py), "-m", "deskbot", *args], cwd=str(ROOT), stdout=out, stderr=subprocess.STDOUT,
+                     stdin=subprocess.DEVNULL, **extra)
     for _ in range(40):  # wait for the new state file
         time.sleep(0.25)
-        if meme_running():
+        if _running(folder):
             break
-    return 202, {"started": True, "minutes": minutes, "eur": eur}
+
+
+def start_memes(minutes: int, eur: float = 110, venue: str = "gmgn") -> tuple[int, dict]:
+    if err := _check(minutes, eur):
+        return 400, {"error": err}
+    venue = venue if venue in VENUES else "gmgn"
+    if meme_running():
+        return 409, {"error": "Já há uma sessão de memes a correr"}
+    _spawn(MEME_DIR, ["memedesk", "--minutes", str(minutes), "--eur", str(eur), "--venue", venue])
+    log.info("Memes session started from the app: %d min, %s EUR, %s", minutes, eur, venue)
+    return 202, {"started": True, "minutes": minutes, "eur": eur, "venue": venue}
 
 
 def stop_memes() -> tuple[int, dict]:
@@ -98,6 +123,26 @@ def stop_memes() -> tuple[int, dict]:
         return 409, {"error": "Não há sessão a correr"}
     (MEME_DIR / "stop").write_text("stop", encoding="utf-8")
     log.info("Memecoin session stop requested from the app")
+    return 202, {"stopping": True}
+
+
+def start_perps(minutes: int, eur: float = 110, lev: float = 5) -> tuple[int, dict]:
+    if err := _check(minutes, eur):
+        return 400, {"error": err}
+    if lev not in LEVERAGES:
+        return 400, {"error": f"alavancagem tem de ser {', '.join(map(str, LEVERAGES))}x (máximo 10x)"}
+    if perp_running():
+        return 409, {"error": "Já há uma sessão de futuros a correr"}
+    _spawn(PERP_DIR, ["perpdesk", "--minutes", str(minutes), "--eur", str(eur), "--lev", str(lev)])
+    log.info("Futures session started from the app: %d min, %s EUR, %sx", minutes, eur, lev)
+    return 202, {"started": True, "minutes": minutes, "eur": eur, "lev": lev}
+
+
+def stop_perps() -> tuple[int, dict]:
+    if not perp_running():
+        return 409, {"error": "Não há sessão a correr"}
+    (PERP_DIR / "stop").write_text("stop", encoding="utf-8")
+    log.info("Futures session stop requested from the app")
     return 202, {"stopping": True}
 
 
@@ -177,6 +222,8 @@ def desk(name: str, bt: dict | None = None) -> dict:
     out = {"name": name, **meta, "backtest": (bt or {}).get(name)}
     if name == "memes":
         return {**out, **_memes()}
+    if name == "perps":
+        return {**out, **_perps()}
     st = read_state(name)
     if not st:
         return {**out, "exists": False, "status": "idle", "rules": [], "positions": [], "trades": [], "log": [],
@@ -231,7 +278,10 @@ def _memes() -> dict:
              "EXEC: a melhor nota primeiro, 1 compra a cada 2 min, 8% do saldo, no máx. 5 posições; preço a cada 5 s; stop −8%, trailing a partir de +20% (vende 12% abaixo do máximo)",
              "CORE: só compra quando os 5 concordam. Tudo em papel: nenhuma carteira, nenhuma ordem real"]
     repos = [{"agent": a, "repo": memedesk.REPOS[a][0], "role": memedesk.REPOS[a][1]} for a in memedesk.AGENTS]
-    base = {"durations": list(DURATIONS), "stakes": list(STAKES), "rules": rules, "running": running, "repos": repos}
+    if os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY"):
+        rules.insert(2, "GMGN (chave tua): moedas em alta da GMGN, smart money e KOLs no SMARTS, rug score, wash trading e bots na equipa de risco")
+    base = {"durations": list(DURATIONS), "stakes": list(STAKES), "rules": rules, "running": running, "repos": repos,
+            "venues": list(VENUES), "gmgn_key": bool(os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY"))}
     if not st:
         return {**base, "exists": False, "status": "idle", "positions": [], "trades": [], "log": [], "curve": [],
                 "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
@@ -280,6 +330,67 @@ def _memes() -> dict:
             "ready": st.get("ready", []), "pools_seen": st.get("pools_seen", 0),
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap,
             "mode": st.get("mode", "classic"), "agents": st.get("agents", {}),
+            "venue": st.get("venue") or "gmgn", "feeds": st.get("feeds", {}),
+            "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
+
+
+def _env_has(key: str) -> bool:
+    try:
+        return any(line.split("=", 1)[0].strip() == key and line.split("=", 1)[1].strip()
+                   for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines() if "=" in line)
+    except OSError:
+        return False
+
+
+def _perps() -> dict:
+    from . import perpdesk
+    p = perpdesk.PerpParams()
+    rules = [f"TRENDS: os {p.universe} perpétuos mais negociados da Hyperliquid; velas de 15 min, EMA 20 e 50 no mesmo sentido; corta quem já correu 3 ATR numa hora",
+             f"SMARTS: os {p.traders} melhores traders do leaderboard público da Hyperliquid (contas de $1M+, a ganhar no mês e desde sempre); precisa de {p.min_traders}+ do nosso lado e mais dinheiro do nosso lado",
+             "DEBATE: 5 votos bull/bear (tendência de 1 h, RSI, funding, volume, VWAP do dia) e a equipa de risco (ATR entre 0,15% e 3%); precisa de 4 votos",
+             "ROUTER: livro de ordens da Hyperliquid; spread até 0,05% e preço de entrada a menos de 0,10% do meio",
+             "EXEC: margem de 15% do saldo à alavancagem da sessão (máx. 10x), no máx. 4 posições; preço a cada 5 s; stop 1,5 ATR, trailing a partir de +2 ATR, liquidação, funding à hora, taxa 0,045%",
+             "CORE: só abre quando os 5 concordam. Tudo em papel: a INVO não tem API pública, nenhuma ordem real"]
+    repos = [{"agent": a, "repo": perpdesk.REPOS[a][0], "role": perpdesk.REPOS[a][1]} for a in perpdesk.AGENTS]
+    running = perp_running()
+    base = {"durations": list(DURATIONS), "stakes": list(STAKES), "levs": list(LEVERAGES), "rules": rules,
+            "running": running, "repos": repos, "venues": ["invo"], "venue": "invo"}
+    try:
+        st = json.loads((PERP_DIR / "state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = None
+    if not st:
+        return {**base, "exists": False, "status": "idle", "positions": [], "trades": [], "log": [], "curve": [],
+                "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
+    rate = st.get("eur_usd") or 1.0
+    positions = []
+    for q in st.get("positions", []):
+        pnl = q["side"] * q["qty"] * (q["last"] - q["entry"]) - q.get("funding", 0)
+        positions.append({"symbol": q["coin"], "name": q["coin"], "side": "long" if q["side"] == 1 else "short",
+                          "lev": q["lev"], "value_eur": max(0.0, q["margin"] + pnl) / rate, "pnl_eur": pnl / rate,
+                          "pct": pnl / q["margin"] if q["margin"] else 0, "entry": q["entry"], "last": q["last"],
+                          "stop": q["stop"], "liq": q["liq"], "trail_on": q.get("trail_on"), "opened": q["opened"]})
+    trades = [{"symbol": t["coin"], "side": t["side"], "lev": t.get("lev"), "pnl_eur": t["pnl_eur"], "pct": t["pct"],
+               "why": t["reason"], "closed": t["closed"]} for t in st.get("trades", [])][::-1]
+    eq = st.get("equity_eur", st.get("start_eur"))
+    recap = None
+    if (bool(st.get("finished")) or not running) and st.get("started"):
+        mins = (datetime.fromisoformat(st["ends"]) - datetime.fromisoformat(st["started"])).total_seconds() / 60
+        wins = [t for t in trades if t["pnl_eur"] > 0]
+        best = max(trades, key=lambda t: t["pnl_eur"], default=None)
+        worst = min(trades, key=lambda t: t["pnl_eur"], default=None)
+        recap = {"minutes": round(mins), "start_eur": st["start_eur"], "end_eur": eq, "trades": len(trades),
+                 "wins": len(wins), "coins_seen": st.get("coins_seen", 0),
+                 "best": best and {"symbol": best["symbol"], "pnl_eur": best["pnl_eur"]},
+                 "worst": worst and {"symbol": worst["symbol"], "pnl_eur": worst["pnl_eur"]},
+                 "started": st["started"], "ended": st["ends"], "win_rate": len(wins) / len(trades) if trades else None,
+                 "stop_txt": f"stop {p.stop_atr:g} ATR · {st.get('lev', 5):g}x"}
+    return {**base, "exists": True, "status": "live" if running else "finished", "started": st["started"],
+            "ends": st["ends"], "start_eur": st["start_eur"], "equity_eur": eq, "positions": positions,
+            "trades": trades, "log": st.get("events", [])[-80:][::-1], "ticker": st.get("ticker", []),
+            "counts": st.get("counts", {}), "ready": st.get("ready", []), "pools_seen": st.get("coins_seen", 0),
+            "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap, "mode": "futuros",
+            "agents": st.get("agents", {}), "feeds": st.get("feeds", {}), "lev": st.get("lev", 5),
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
 
 
@@ -287,6 +398,8 @@ def overview(bt: dict | None = None) -> dict:
     items = []
     for name in ("memes", "futuros", "acoes"):
         d = desk(name, bt)
+        if name == "futuros" and (perp_running() or (PERP_DIR / "state.json").exists()):
+            d = {**desk("perps", bt), "name": "futuros"}
         curve = d.get("curve") or []
         step = max(1, len(curve) // 60)
         items.append({k: d.get(k) for k in ("name", "title", "subtitle", "blurb", "color", "mode", "status",

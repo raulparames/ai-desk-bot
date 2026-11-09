@@ -49,7 +49,7 @@ a{color:inherit;text-decoration:none}
 /* top */
 .top{display:flex;align-items:center;gap:8px;height:50px}
 .top img{width:30px;height:30px;border-radius:8px}
-.top .nm{font-weight:700;font-size:17px}
+.top .nm{font-weight:700;font-size:17px;white-space:nowrap}
 .chip{font:11px var(--mono);color:var(--t3);background:var(--panel-2);border-radius:6px;padding:2px 7px}
 .live{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--green)}
 .live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite alternate}
@@ -137,6 +137,11 @@ a{color:inherit;text-decoration:none}
 .tiles div{background:var(--panel-2);border-radius:10px;padding:7px 8px}
 .tiles span{display:block;font:10.5px var(--mono);color:var(--t3)}
 .tiles b{font-size:17px}
+.vbadge{display:inline-grid;place-items:center;min-width:44px;height:44px;padding:0 8px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);font:800 12px var(--mono);color:var(--green)}
+.vchip{font:700 11px var(--mono);color:var(--green);border:1px solid rgba(34,211,122,.35);border-radius:6px;padding:1px 6px}
+@media (max-width:420px){.vchip{display:none}}
+.foot{font-size:11.5px;margin:14px 2px 0;color:var(--t3)}
+.foot a{color:var(--t2);text-decoration:underline}
 .links a{display:flex;justify-content:space-between;align-items:center;min-height:48px;padding:0 4px;border-bottom:1px solid var(--line);font-size:15px}
 
 /* toast */
@@ -161,7 +166,7 @@ a{color:inherit;text-decoration:none}
 <div class="offline" id="offline" role="status" hidden></div>
 
 <main class="wrap" id="main" hidden>
-  <div class="top"><a class="back" href="index.html" aria-label="Voltar às mesas">‹</a><img src="icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip">modo memes</span><span class="live" id="live"><i></i>Live</span></div>
+  <div class="top"><a class="back" href="index.html" aria-label="Voltar às mesas">‹</a><img src="icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip" id="mode-chip">modo memes</span><span class="vchip" id="venue-chip" hidden></span><span class="live" id="live"><i></i>Live</span></div>
   <div class="tick" id="tick"></div>
   <div class="cap" id="cap"></div>
   <div class="balrow"><div class="bal" id="bal"></div><span class="delta" id="delta" hidden></span></div>
@@ -173,7 +178,7 @@ a{color:inherit;text-decoration:none}
   <div class="box"><div class="box-h"><b>agentes · a trabalhar juntos</b><span id="running"></span></div><div id="agents"></div></div>
   <div class="box graph"><div class="box-h"><b>5 agentes → núcleo</b><span class="t3" id="agree"></span></div><div id="graph"></div></div>
   <div class="btns"><button class="btn" id="b-new">Nova sessão</button><button class="btn" id="b-stop">Parar sessão</button></div>
-  <p class="t3" style="font-size:11.5px;margin:14px 2px 0">Papel: nenhuma carteira, nenhuma ordem real. Dados públicos do GeckoTerminal, DexScreener, Jupiter e da rede Solana; links para o pump.fun e a GMGN.</p>
+  <p class="foot" id="foot"></p>
 </main>
 
 <div class="sheet-bg" id="sheet" hidden><div class="sheet" role="dialog" aria-modal="true" id="sheet-in"></div></div>
@@ -227,9 +232,10 @@ a{color:inherit;text-decoration:none}
       }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {
+          const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));
           if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
-          else if (path === "/api/desk/memes/start") await rpc("app_command", {p_token: tok(), p_kind: "start_session", p_payload: body});
-          else if (path === "/api/desk/memes/stop") await rpc("app_command", {p_token: tok(), p_kind: "stop_session", p_payload: {}});
+          else if (ses) await rpc("app_command", {p_token: tok(), p_kind: ses[2] === "start" ? "start_session" : "stop_session",
+                                                  p_payload: Object.assign({}, ses[2] === "start" ? body : {}, {desk: ses[1]})});
           else return reply(404, {error: "not found"});
           return reply(202, {queued: true});
         }
@@ -261,6 +267,22 @@ const hhmm = iso => iso ? new Date(iso).toLocaleTimeString("pt-PT", {hour: "2-di
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
 function bigMoney(v) { const s = eur(v), i = s.lastIndexOf(","); return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<span class="c">${esc(s.slice(i))}</span>`; }
+
+/* ---------------------------------------------------------------- memes or futures: same terminal */
+const KIND = /perps/.test(location.pathname) ? "perps" : "memes";
+const MODE = KIND === "perps" ? "futuros" : "memes";
+const VENUE_NAME = {gmgn: "GMGN", fomo: "FOMO", invo: "INVO"};
+const K = {
+  memes: {chip: "modo memes", api: "/api/desk/memes", unit: "moedas", what: "memecoins",
+          stars: {"GMGNAI/gmgn-skills": 685, "8bitsats/Solana-MCP-Trading-Server": 14, "TauricResearch/TradingAgents": 121491, "sendaifun/solana-agent-kit": 1748, "0xsyncroot/opentrade": 9},
+          src: {SMARTS: "gmgn-skills", TRENDS: "MCP-Trading", DEBATE: "TradingAgents", ROUTER: "agent-kit", EXEC: "opentrade"}},
+  perps: {chip: "modo futuros", api: "/api/desk/perps", unit: "pares", what: "futuros",
+          stars: {"hyperliquid-dex/hyperliquid-python-sdk": 1879, "freqtrade/freqtrade": 56687, "TauricResearch/TradingAgents": 121510, "ccxt/ccxt": 44834, "nautechsystems/nautilus_trader": 31400},
+          src: {SMARTS: "hl-sdk", TRENDS: "freqtrade", DEBATE: "TradingAgents", ROUTER: "ccxt", EXEC: "nautilus"}},
+}[KIND];
+document.title = "AI Desk Bot · " + K.chip;
+$("#mode-chip").textContent = K.chip;
+$("#boot .sub").textContent = "terminal · " + K.chip;
 
 /* ---------------------------------------------------------------- auth (same as the other pages) */
 (function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
@@ -308,7 +330,7 @@ const COLORS = ["#f7931a", "#4cc3ff", "#22d37a", "#ffb020", "#a98bff", "#ff5fa8"
 const coinColor = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
 
 /* ---------------------------------------------------------------- boot: git clone · 5 repos */
-const STARS = {"GMGNAI/gmgn-skills": 685, "8bitsats/Solana-MCP-Trading-Server": 14, "TauricResearch/TradingAgents": 121491, "sendaifun/solana-agent-kit": 1748, "0xsyncroot/opentrade": 9};
+const STARS = K.stars;
 const short = n => n >= 1000 ? nf(n >= 10000 ? 0 : 1).format(n / 1000) + "k" : String(n);
 function boot(done) {
   const repos = Object.keys(STARS);
@@ -320,18 +342,19 @@ function boot(done) {
 }
 
 /* ---------------------------------------------------------------- data */
-const S = {d: null, lastEv: null, timer: null, minutes: 720, eur: 110, connected: false};
+const S = {d: null, lastEv: null, timer: null, minutes: 720, eur: 110, connected: false, lev: 5,
+           venue: KIND === "perps" ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn")};
 async function load() {
   let d;
-  try { d = await api("/api/desk/memes"); $("#offline").hidden = true; }
+  try { d = await api(K.api); $("#offline").hidden = true; }
   catch (e) { if (!e.locked) { $("#offline").hidden = false; $("#offline").textContent = e.offline ? "Sem ligação ao bot · a tentar outra vez" : "Erro: " + e.message; } return; }
   const first = !S.d;
   S.d = d;
   render(d);
   if (first) {
     S.lastEv = (d.log || [])[0]?.ts || null;
-    if (!d.running && (!d.recap || d.mode !== "memes")) openConnect();
-    else if (!d.running && d.recap && d.mode === "memes") openRecap();
+    if (!d.running && (!d.recap || d.mode !== MODE)) openConnect();
+    else if (!d.running && d.recap && d.mode === MODE) openRecap();
   } else toasts(d);
 }
 
@@ -340,10 +363,12 @@ function render(d) {
   $("#main").hidden = false;
   const running = d.running;
   $("#live").className = "live" + (running ? "" : " off"); $("#live").innerHTML = `<i></i>${running ? "Live" : "parada"}`;
-  const tk = (d.ticker || []).map(t => `<span><i style="background:${coinColor(t.symbol)}" aria-hidden="true"></i>${esc(t.symbol)} <span class="${cls(t.pct)}">${esc(pct(t.pct, 0))}</span> <span class="t3">dex</span></span>`).join("");
-  $("#tick").innerHTML = `<div class="run">${tk ? tk + tk : '<span class="t3">à espera das primeiras moedas</span>'}</div>`;
+  const venue = VENUE_NAME[d.venue || S.venue] || "GMGN";
+  $("#venue-chip").hidden = false; $("#venue-chip").textContent = venue;
+  const tk = (d.ticker || []).map(t => `<span><i style="background:${coinColor(t.symbol)}" aria-hidden="true"></i>${esc(t.symbol)} <span class="${cls(t.pct)}">${esc(pct(t.pct, KIND === "perps" ? 1 : 0))}</span> <span class="t3">${KIND === "perps" ? "perp" : "dex"}</span></span>`).join("");
+  $("#tick").innerHTML = `<div class="run">${tk ? tk + tk : `<span class="t3">à espera dos primeiros ${K.unit === "pares" ? "pares" : "tokens"}</span>`}</div>`;
   const mins = d.started ? Math.max(0, Math.round(((running ? Date.now() : new Date(d.ends)) - new Date(d.started)) / 60000)) : 0;
-  $("#cap").textContent = `a negociar em papel · 5 repos · 5 agentes · ${Math.floor(mins / 60)}h ${mins % 60}m${running ? "" : " (terminada)"}`;
+  $("#cap").textContent = `a negociar via ${venue} em papel · 5 repos · 5 agentes · ${KIND === "perps" ? (d.lev || S.lev) + "x · " : ""}${Math.floor(mins / 60)}h ${mins % 60}m${running ? "" : " (terminada)"}`;
   const eq = d.equity_eur, start = d.start_eur, diff = eq - start;
   $("#bal").innerHTML = bigMoney(eq);
   const pts = (d.curve || []).filter(p => p[1] != null);
@@ -357,14 +382,16 @@ function render(d) {
   // trade log: the last buys and sells
   const tl = (d.log || []).filter(e => e.verdict === "buy" || e.verdict === "sell").slice(0, 3);
   $("#trades").innerHTML = tl.length ? tl.map(e => {
-    const val = e.pnl_eur != null ? `<span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span>` : esc((e.reason || "").replace(/^comprou /, "").split(" · ")[0]);
-    return `<div data-mint="${esc(e.mint || "")}" data-coin="${esc(e.coin)}" role="button" tabindex="0"><span class="tm">${esc(hhmm(e.ts))}</span><span class="tg ${e.verdict}">${e.verdict === "buy" ? "BUY" : "SELL"}</span><span class="co"><i style="background:${coinColor(e.coin)}"></i>${esc(e.coin)}</span><span class="vl">${val} <span class="t3">papel</span></span></div>`;
+    const parts = (e.reason || "").replace(/^comprou /, "").split(" · ");
+    const val = e.pnl_eur != null ? `<span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span>` : esc(KIND === "perps" ? (parts[1] || "").replace("margem ", "") : parts[0]);
+    const tag = e.verdict === "buy" ? (KIND === "perps" ? String(e.side || "long").toUpperCase() : "BUY") : (KIND === "perps" ? "CLOSE" : "SELL");
+    return `<div data-mint="${esc(e.mint || "")}" data-coin="${esc(e.coin)}" role="button" tabindex="0"><span class="tm">${esc(hhmm(e.ts))}</span><span class="tg ${e.verdict}">${tag}</span><span class="co"><i style="background:${coinColor(e.coin)}"></i>${esc(e.coin)}</span><span class="vl">${val} <span class="t3">papel</span></span></div>`;
   }).join("") : `<div><span class="tm">—</span><span class="tg t3">…</span><span class="co t3">ainda sem trades nesta sessão</span><span></span></div>`;
   // agents working together
   const ags = d.agents || {};
   const runningN = running ? ORDER.length : 0;
   $("#running").innerHTML = running ? `● ${runningN} a correr` : `<span class="t3">parados</span>`;
-  const src = {SMARTS: "gmgn-skills", TRENDS: "MCP-Trading", DEBATE: "TradingAgents", ROUTER: "agent-kit", EXEC: "opentrade"};
+  const src = K.src;
   $("#agents").innerHTML = ORDER.map(a => {
     const x = ags[a] || {}, ok = x.ok;
     const coin = x.coin ? `<span style="display:inline-flex;align-items:center;gap:4px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${coinColor(x.coin)}"></i><b>${esc(x.coin)}</b></span> · ` : "";
@@ -375,6 +402,10 @@ function render(d) {
   $("#agree").textContent = lastCore ? `${hhmm(lastCore.ts)} · ${lastCore.coin} · 5/5` : "à espera de 5/5";
   $("#graph").innerHTML = graph(ags, running);
   $("#b-stop").disabled = !running; $("#b-new").disabled = running;
+  const feeds = Object.values(d.feeds || {}).map(f => f.text).filter(Boolean).join(" · ");
+  $("#foot").innerHTML = KIND === "perps"
+    ? `Papel: nenhuma ordem real. Preços, livro de ordens, funding e top traders da Hyperliquid, a exchange onde a INVO negoceia. A INVO não tem API pública: cada par abre na INVO ou na Hyperliquid.${feeds ? "<br>" + esc(feeds) : ""}<br><a href="index.html#/futuros">Mesa contínua de futuros (velas de 4 h, com backtest) ›</a>`
+    : `Papel: nenhuma carteira, nenhuma ordem real. Dados da GMGN (com a tua chave), GeckoTerminal, DexScreener, Jupiter e da rede Solana. Cada moeda abre na GMGN ou na FOMO.${feeds ? "<br>" + esc(feeds) : ""}`;
   document.querySelectorAll("#trades [data-coin]").forEach(r => r.onclick = () => coinSheet(r.dataset.coin, r.dataset.mint));
 }
 function graph(ags, running) {
@@ -421,10 +452,12 @@ function toasts(d) {
   const e = fresh.find(x => x.verdict === "sell" || x.verdict === "buy" || (x.agent === "CORE" && x.verdict === "pass") || (x.agent === "SMARTS" && x.verdict === "pass"));
   if (!e) return;
   const icon = `<img src="icon-180.png" alt="" width="34" height="34" style="border-radius:9px">`;
-  if (e.verdict === "sell") toast(`${icon}<div><b>Vendeu ${esc(e.coin)} ${esc(seur(e.pnl_eur))}</b><span>${esc((e.reason || "").split(")")[0].replace("vendeu (", ""))} · papel</span></div>`);
-  else if (e.verdict === "buy") toast(`${icon}<div><b>Comprou ${esc(e.coin)}</b><span>5/5 agentes concordaram · papel</span></div>`);
+  const via = VENUE_NAME[d.venue || S.venue] || "GMGN";
+  if (e.verdict === "sell") toast(`${icon}<div><b>${KIND === "perps" ? "Fechou" : "Vendeu"} ${esc(e.coin)} ${esc(seur(e.pnl_eur))}</b><span>${esc((e.reason || "").split(")")[0].replace(/^(vendeu|fechou \w+) \(/, ""))} · via ${via} · papel</span></div>`);
+  else if (e.verdict === "buy") toast(`${icon}<div><b>${KIND === "perps" ? `Abriu ${esc(e.side || "long")} ${esc(e.coin)} ${esc(e.lev || "")}x` : `Comprou ${esc(e.coin)}`}</b><span>5/5 agentes concordaram · via ${via} · papel</span></div>`);
   else if (e.agent === "CORE") toast(`${icon}<div><b>${esc(e.coin)}: 5/5 agentes concordaram</b><span>${esc(e.reason)}</span></div>`);
-  else toast(`${face("SMARTS", 34)}<div><b>Baleias a comprar ${esc(e.coin)}</b><span>${esc(e.reason)} em 30 min · SMARTS</span></div>`);
+  else if (KIND === "perps") toast(`${face("SMARTS", 34)}<div><b>Top traders ${esc((e.reason || "").includes(" short") ? "short" : "long")} em ${esc(e.coin)}</b><span>${esc(e.reason)} · SMARTS</span></div>`);
+  else toast(`${face("SMARTS", 34)}<div><b>Smart money a comprar ${esc(e.coin)}</b><span>${esc(e.reason)} · SMARTS</span></div>`);
 }
 
 /* ---------------------------------------------------------------- sheets */
@@ -434,26 +467,41 @@ $("#sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeS
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
 const DUR = [[5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [120, "2 h"], [720, "12 h"]];
 function openConnect() {
-  const d = S.d || {}, stakes = d.stakes || [50, 110, 500, 1000];
+  const d = S.d || {}, stakes = d.stakes || [50, 110, 500, 1000], perps = KIND === "perps";
+  const venues = perps ? ["invo"] : ["gmgn", "fomo"];
+  if (!venues.includes(S.venue)) S.venue = venues[0];
   const until = new Date(Date.now() + S.minutes * 60000);
-  sheet(`<div class="conn-icons"><img src="icon-180.png" alt=""><span class="dots">• • •</span>${face("SMARTS", 44)}</div>
-    <h2>Ligar a mesa de memes</h2><p class="t3" style="text-align:center;margin:0;font-size:12.5px">AI Desk Bot quer negociar memecoins da Solana em papel</p>
-    <div class="kv"><div><span>chains</span><span>Solana</span></div><div><span>dados</span><span>pump.fun · GeckoTerminal · Jupiter</span></div><div><span>skills</span><span>5 repos · 5 agentes · 1 núcleo</span></div><div><span>sessão</span><span id="c-sess">${hhmm(new Date().toISOString())} → ${hhmm(until.toISOString())} · ${esc(eur(S.eur))}</span></div></div>
+  const data = perps ? "Hyperliquid · top traders · livro de ordens" : (d.gmgn_key ? "GMGN · smart money · KOLs · rug score" : "GeckoTerminal · Jupiter · pump.fun");
+  sheet(`<div class="conn-icons"><img src="icon-180.png" alt=""><span class="dots">• • •</span><span class="vbadge" id="c-badge">${VENUE_NAME[S.venue]}</span></div>
+    <h2 id="c-h">Ligar à ${VENUE_NAME[S.venue]}</h2><p class="t3" style="text-align:center;margin:0;font-size:12.5px" id="c-sub">AI Desk Bot quer negociar ${K.what} através da ${VENUE_NAME[S.venue]} · em papel</p>
+    ${perps ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>`}
+    <div class="kv"><div><span>${perps ? "exchange" : "chains"}</span><span>${perps ? "Hyperliquid (a da INVO)" : "Solana"}</span></div><div><span>dados</span><span>${esc(data)}</span></div><div><span>skills</span><span>5 repos · 5 agentes · 1 núcleo</span></div><div><span>sessão</span><span id="c-sess"></span></div></div>
     <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
     <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
-    <ul class="perm"><li><span class="y">✓</span> tokens · carteiras · dados de mercado · trades em papel</li><li><span class="y">✓</span> tu escolhes o saldo e a duração</li><li><span class="n">✕</span> não mexe em dinheiro real nem em carteiras</li></ul>
-    <button class="go" id="c-go">Ligar e começar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
-  const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}`; };
+    ${perps ? `<div class="lbl">alavancagem (máximo 10x)</div><div class="choice" id="c-lev">${(d.levs || [2, 5, 10]).map(v => `<button data-l="${v}" aria-pressed="${v === S.lev}">${v}x</button>`).join("")}</div>` : ""}
+    <ul class="perm"><li><span class="y">✓</span> ${perps ? "pares · top traders · livro de ordens · trades em papel" : "tokens · carteiras · dados de mercado · trades em papel"}</li><li><span class="y">✓</span> tu escolhes o saldo, a duração${perps ? " e a alavancagem" : ""}</li><li><span class="n">✕</span> não mexe em dinheiro real nem na tua conta <span id="c-acc">${VENUE_NAME[S.venue]}</span></li></ul>
+    ${!perps && !d.gmgn_key ? `<p class="t3" style="font-size:11.5px;margin:8px 0 0">Sem chave GMGN: os agentes usam GeckoTerminal e Jupiter. Com a tua chave (posta no PC) entram o smart money, os KOLs e o rug score da GMGN.</p>` : ""}
+    <button class="go" id="c-go">Ligar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
+  const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}${perps ? " · " + S.lev + "x" : ""}`; };
+  sess();
+  document.querySelectorAll("#c-ven button").forEach(b => b.onclick = () => {
+    S.venue = b.dataset.v; store.set("deskbot-venue", S.venue);
+    document.querySelectorAll("#c-ven button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    const n = VENUE_NAME[S.venue]; $("#c-badge").textContent = n; $("#c-h").textContent = "Ligar à " + n; $("#c-acc").textContent = n;
+    $("#c-sub").textContent = `AI Desk Bot quer negociar ${K.what} através da ${n} · em papel`;
+  });
+  document.querySelectorAll("#c-lev button").forEach(b => b.onclick = () => { S.lev = +b.dataset.l; document.querySelectorAll("#c-lev button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
   document.querySelectorAll("#c-dur button").forEach(b => b.onclick = () => { S.minutes = +b.dataset.m; document.querySelectorAll("#c-dur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
   document.querySelectorAll("#c-eur button").forEach(b => b.onclick = () => { S.eur = +b.dataset.e; document.querySelectorAll("#c-eur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
   $("#c-go").onclick = async () => {
     const go = $("#c-go"); go.disabled = true; go.textContent = "A ligar…";
+    const body = perps ? {minutes: S.minutes, eur: S.eur, lev: S.lev} : {minutes: S.minutes, eur: S.eur, venue: S.venue};
     try {
-      await api("/api/desk/memes/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({minutes: S.minutes, eur: S.eur})});
+      await api(K.api + "/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
       go.textContent = "Ligado ✓"; go.classList.add("done");
       setTimeout(() => { openRepos(); }, 700);
       S.lastEv = new Date().toISOString(); load();
-    } catch (e) { go.disabled = false; go.textContent = "Ligar e começar"; $("#c-msg").textContent = e.message; }
+    } catch (e) { go.disabled = false; go.textContent = "Ligar"; $("#c-msg").textContent = e.message; }
   };
 }
 function openRepos() {
@@ -467,28 +515,34 @@ function openRepos() {
 function openRecap() {
   const r = S.d && S.d.recap; if (!r) return;
   const diff = r.end_eur - r.start_eur, h = r.minutes >= 60 ? `${Math.round(r.minutes / 60)}h` : `${r.minutes} min`;
-  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="icon-180.png" alt="" width="36" height="36" style="border-radius:9px"><div><b style="font-size:17px">Resumo ${esc(h)}</b><div class="t3 mono" style="font-size:11px">modo memes · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="icon-180.png" alt="" width="36" height="36" style="border-radius:9px"><div><b style="font-size:17px">Resumo ${esc(h)}</b><div class="t3 mono" style="font-size:11px">${K.chip} · via ${VENUE_NAME[(S.d && S.d.venue) || S.venue]} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
     <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
     <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="pill">${nf(1).format(r.end_eur / (r.start_eur || 1))}×</span></div>
-    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>moedas</span><b>${r.coins_seen}</b></div><div><span>repos</span><b>5</b></div><div><span>agentes</span><b>5</b></div></div>
-    <p style="font:12px/1.6 var(--mono);color:var(--t2);margin:12px 0 0">${r.best ? `melhor ${esc(r.best.symbol)} <span class="${cls(r.best.pnl_eur)}">${esc(seur(r.best.pnl_eur))}</span><br>pior ${esc(r.worst.symbol)} <span class="${cls(r.worst.pnl_eur)}">${esc(seur(r.worst.pnl_eur))}</span><br>` : "nenhuma moeda passou os 5 agentes<br>"}acerto ${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"} · stop −${nf(0).format((r.stop_pct || .08) * 100)}% em cada trade<br><span class="t3">papel: nenhuma ordem real</span></p>
+    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>${K.unit}</span><b>${r.coins_seen}</b></div><div><span>repos</span><b>5</b></div><div><span>agentes</span><b>5</b></div></div>
+    <p style="font:12px/1.6 var(--mono);color:var(--t2);margin:12px 0 0">${r.best ? `melhor ${esc(r.best.symbol)} <span class="${cls(r.best.pnl_eur)}">${esc(seur(r.best.pnl_eur))}</span><br>pior ${esc(r.worst.symbol)} <span class="${cls(r.worst.pnl_eur)}">${esc(seur(r.worst.pnl_eur))}</span><br>` : (KIND === "perps" ? "nenhum par passou os 5 agentes<br>" : "nenhuma moeda passou os 5 agentes<br>")}acerto ${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"} · ${esc(r.stop_txt || "stop −" + nf(0).format((r.stop_pct || .08) * 100) + "% em cada trade")}<br><span class="t3">papel: nenhuma ordem real</span></p>
     <button class="go" id="re-new">Nova sessão</button></div>`);
   $("#re-new").onclick = openConnect;
 }
 function coinSheet(coin, mint) {
-  if (!mint) return;
-  const m = encodeURIComponent(mint);
-  sheet(`<h2 style="text-align:left;margin:0 0 8px">${esc(coin)}</h2><div class="links">
-    <a href="https://pump.fun/coin/${m}" target="_blank" rel="noopener noreferrer">Abrir no pump.fun <span aria-hidden="true">›</span></a>
-    <a href="https://gmgn.ai/sol/token/${m}" target="_blank" rel="noopener noreferrer">Abrir na GMGN <span aria-hidden="true">›</span></a>
-    <a href="https://dexscreener.com/solana/${m}" target="_blank" rel="noopener noreferrer">Abrir no DexScreener <span aria-hidden="true">›</span></a></div>
-    <p class="t3" style="font-size:11.5px">Só para ver. Comprar lá é dinheiro real e decisão tua; esta mesa nunca compra por ti.</p>`);
+  let links;
+  if (KIND === "perps") {
+    const c = encodeURIComponent(coin);
+    links = [["Abrir na INVO", "https://app.invoapp.com/"], ["Abrir na Hyperliquid", `https://app.hyperliquid.xyz/trade/${c}`]];
+  } else {
+    if (!mint) return;
+    const m = encodeURIComponent(mint);
+    const app = {gmgn: ["Abrir na GMGN", `https://gmgn.ai/sol/token/${m}`], fomo: ["Abrir na FOMO", `https://fomo.family/tokens/solana/${m}`]};
+    const v = (S.d && S.d.venue) === "fomo" ? "fomo" : "gmgn";
+    links = [app[v], app[v === "gmgn" ? "fomo" : "gmgn"], ["Abrir no pump.fun", `https://pump.fun/coin/${m}`], ["Abrir no DexScreener", `https://dexscreener.com/solana/${m}`]];
+  }
+  sheet(`<h2 style="text-align:left;margin:0 0 8px">${esc(coin)}</h2><div class="links">${links.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)} <span aria-hidden="true">›</span></a>`).join("")}</div>
+    <p class="t3" style="font-size:11.5px">Só para ver. Negociar lá é dinheiro real e decisão tua; esta mesa nunca negoceia por ti.</p>`);
 }
 $("#b-new").onclick = openConnect;
 $("#b-stop").onclick = async () => {
-  if (!confirm("Parar a sessão agora? Vende tudo ao último preço e mostra o resumo.")) return;
+  if (!confirm(KIND === "perps" ? "Parar a sessão agora? Fecha todas as posições ao último preço e mostra o resumo." : "Parar a sessão agora? Vende tudo ao último preço e mostra o resumo.")) return;
   $("#b-stop").disabled = true;
-  try { await api("/api/desk/memes/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast(`<div><b>A parar a sessão…</b><span>a vender as posições em papel</span></div>`); setTimeout(async () => { await load(); openRecap(); }, 20000); }
+  try { await api(K.api + "/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast(`<div><b>A parar a sessão…</b><span>a ${KIND === "perps" ? "fechar" : "vender"} as posições em papel</span></div>`); setTimeout(async () => { await load(); openRecap(); }, 20000); }
   catch (e) { toast(`<div><b>Não deu para parar</b><span>${esc(e.message)}</span></div>`); $("#b-stop").disabled = false; }
 };
 

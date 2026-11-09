@@ -237,9 +237,10 @@ a{color:inherit;text-decoration:none}
       }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {
+          const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));
           if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
-          else if (path === "/api/desk/memes/start") await rpc("app_command", {p_token: tok(), p_kind: "start_session", p_payload: body});
-          else if (path === "/api/desk/memes/stop") await rpc("app_command", {p_token: tok(), p_kind: "stop_session", p_payload: {}});
+          else if (ses) await rpc("app_command", {p_token: tok(), p_kind: ses[2] === "start" ? "start_session" : "stop_session",
+                                                  p_payload: Object.assign({}, ses[2] === "start" ? body : {}, {desk: ses[1]})});
           else return reply(404, {error: "not found"});
           return reply(202, {queued: true});
         }
@@ -361,7 +362,7 @@ async function loadHome() {
   $("#home-live").className = "live" + (anyLive ? "" : " idle"); $("#home-live").innerHTML = `<i></i>${anyLive ? "Live" : "parado"}`;
   $("#desks").innerHTML = d.desks.map(x => {
     const diff = (x.equity_eur || 0) - (x.start_eur || 0);
-    return `<a class="dcard" href="${x.name === "memes" ? "memes.html" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
+    return `<a class="dcard" href="${x.name === "memes" ? "memes.html" : x.name === "futuros" ? "perps.html" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
       <div class="r1">${blob(x.name, x.color, 38)}<div style="min-width:0"><b>${esc(x.title)}</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.subtitle)}</div></div>${liveTag(x.status)}</div>
       <p class="blurb">${esc(x.blurb)}</p>
       <div class="r2"><div><div class="val">${bigMoney(x.equity_eur)}</div><div class="stats"><span class="${cls(diff)}">${esc(seur(diff))}</span> · ${x.positions} abertas · ${x.trades} trades</div></div>${spark(x.spark, x.start_eur)}</div></a>`;

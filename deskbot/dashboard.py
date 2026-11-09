@@ -910,6 +910,7 @@ class Handler(BaseHTTPRequestHandler):
                     "/m": ("mobile.html", "text/html; charset=utf-8"),
                     "/app": ("app.html", "text/html; charset=utf-8"),
                     "/memes": ("memes.html", "text/html; charset=utf-8"),
+                    "/perps": ("memes.html", "text/html; charset=utf-8"),   # same terminal, futures mode
                     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
                     "/icon-180.png": ("icon-180.png", "image/png"),
                     "/icon-512.png": ("icon-512.png", "image/png")}
@@ -923,6 +924,7 @@ class Handler(BaseHTTPRequestHandler):
                   "/api/desks": lambda: desks_api.overview(desks_api.backtests()),
                   "/api/desk/memes": lambda: desks_api.desk("memes", desks_api.backtests()),
                   "/api/desk/futuros": lambda: desks_api.desk("futuros", desks_api.backtests()),
+                  "/api/desk/perps": lambda: desks_api.desk("perps", desks_api.backtests()),
                   "/api/desk/acoes": lambda: desks_api.desk("acoes", desks_api.backtests())}
         path = self.path.split("?")[0]
         if path in self.STATIC_FILES:  # pages and icons carry no data; the API below is what needs the token
@@ -956,8 +958,13 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/phone/password": self.app.set_phone_password,
                    "/api/desk/pause": lambda b: desks_api.pause(str(b.get("name")), bool(b.get("paused"))),
                    "/api/desk/memes/start": lambda b: desks_api.start_memes(int(b.get("minutes") or 0),
-                                                                             float(b.get("eur") or 110)),
+                                                                             float(b.get("eur") or 110),
+                                                                             str(b.get("venue") or "gmgn")),
                    "/api/desk/memes/stop": lambda b: desks_api.stop_memes(),
+                   "/api/desk/perps/start": lambda b: desks_api.start_perps(int(b.get("minutes") or 0),
+                                                                             float(b.get("eur") or 110),
+                                                                             float(b.get("lev") or 5)),
+                   "/api/desk/perps/stop": lambda b: desks_api.stop_perps(),
                    "/api/login": lambda b: self.app.login(self._client_ip(), b)}
         if path not in actions:
             return self._json(404, {"error": "not found"})

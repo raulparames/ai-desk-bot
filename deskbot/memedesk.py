@@ -20,8 +20,11 @@ here, with free public data and paper money (no wallet, no keys, no orders anywh
           trailing from +20% that sells 12% off the top; exits priced with a Jupiter sell quote.
   CORE    buys only when all five agree ("5/5").
 
-GMGN itself (smart money and KOL wallets, rug scores) needs a personal GMGN API key; this desk does
-not use the public demo key, which GMGN says is for testing only.
+GMGN (smart money and KOL wallets, rug scores, its own trending list) joins in when GMGN_API_KEY is
+in .env (your own key from https://gmgn.ai/ai; read-only, see gmgn.py). Then TRENDS also takes GMGN's
+5-minute trending coins, SMARTS counts GMGN's smart money and KOL wallets, and the risk team adds
+GMGN's rug score, wash trading, bundler and insider shares. Without a key it runs as above.
+The venue (GMGN or FOMO) is only where the app opens each coin: every order stays in paper.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from datetime import datetime, timedelta
 import requests
 
 from . import memetest as M
+from .gmgn import Gmgn, from_rank
 from .memetest import MemeParams, MemeTest, Position, _f, _now, _pt
 
 log = logging.getLogger("memetest")
@@ -49,6 +53,7 @@ REPOS = {
     "ROUTER": ("sendaifun/solana-agent-kit", "rotas Jupiter"),
     "EXEC": ("0xsyncroot/opentrade", "execução rápida"),
 }
+VENUES = {"gmgn": "GMGN", "fomo": "FOMO"}
 BUCKET = {"TRENDS": "trends", "SMARTS": "smarts", "DEBATE": "debate", "ROUTER": "router", "EXEC": "exec",
           "CORE": "core"}
 
@@ -64,9 +69,18 @@ class MemesDesk(MemeTest):
     MAX_IMPACT = 0.02
     RISK_EVERY_S = 5
 
-    def __init__(self, minutes: float, eur: float):
+    GMGN_SMART_MIN = 3        # smart money + KOL wallets holding, when GMGN is on
+    GMGN_RUG_MAX = 0.30       # GMGN's own line between normal and high rug risk
+    GMGN_BOTS_MAX = 0.30      # bundler or insider share of the volume
+
+    def __init__(self, minutes: float, eur: float, venue: str = "gmgn"):
         super().__init__(minutes, eur, memes_params())
         self.d.mode = "memes"
+        self.d.venue = venue if venue in VENUES else "gmgn"
+        self.gmgn = Gmgn()
+        self._gm: dict[str, dict] = {}          # mint -> GMGN numbers from its trending row
+        self._gm_done: set[str] = set()         # GMGN coins already looked up on GeckoTerminal
+        self.d.feeds = {"gmgn": self.gmgn.status()}
         self.d.counts = {k: {} for k in ("trends", "smarts", "debate", "router", "exec", "core")}
         self.d.agents = {a: {"coin": None, "text": "à espera", "ok": None, "ts": None} for a in AGENTS}
         self._sol = (0.0, 0.0)   # (price, fetched at)
@@ -126,11 +140,43 @@ class MemesDesk(MemeTest):
         for pool in (n or {}).get("data", []):
             if pool["relationships"]["dex"]["data"]["id"] == "pumpswap":
                 found.setdefault(pool["attributes"]["address"], {**pool, "source": "saiu do pump.fun"})
+        found.update(self._gmgn_pools(found))
+        self.d.feeds["gmgn"] = self.gmgn.status()
         self.d.pools_seen = len(set(self.d.seen) | set(found) | set(self.d.waiting))
         for addr, pool in found.items():
             if addr in self.d.seen or any(p.pool == addr for p in self.d.positions):
                 continue
             self.trends(addr, pool)
+
+    def _gmgn_pools(self, found: dict) -> dict:
+        """GMGN's 5-minute trending coins as GeckoTerminal pools. At most 2 lookups a scan: the free
+        GeckoTerminal API allows only a few calls a minute."""
+        if not self.gmgn.enabled:
+            return {}
+        known = {pool["relationships"]["base_token"]["data"]["id"].split("_", 1)[1] for pool in found.values()}
+        out, lookups = {}, 0
+        for i, item in enumerate(self.gmgn.trending("5m", 50)[:20]):
+            mint = item.get("address") or ""
+            if not mint:
+                continue
+            self._gm[mint] = from_rank(item)
+            if (mint in known or mint in self._gm_done or str(item.get("symbol", "")).upper() in M.MAJORS
+                    or lookups >= 2):
+                continue
+            lookups += 1
+            self._gm_done.add(mint)
+            d = self._gecko(f"/networks/solana/tokens/{mint}/pools", {"page": 1, "include": "base_token,dex"})
+            pools = (d or {}).get("data") or []
+            if pools:
+                top = max(pools, key=lambda p: _f(p["attributes"].get("reserve_in_usd")))
+                out[top["attributes"]["address"]] = {**top, "source": f"GMGN trending #{i + 1}"}
+        return out
+
+    def gm(self, mint: str) -> dict | None:
+        """GMGN numbers for a coin: from its trending row if we saw one, else a fresh lookup."""
+        if not self.gmgn.enabled or not mint:
+            return None
+        return self._gm.get(mint) or self.gmgn.token(mint)
 
     def trends(self, addr: str, pool: dict):
         a = pool["attributes"]
@@ -165,7 +211,7 @@ class MemesDesk(MemeTest):
     def auditor(self, addr: str, pool: dict, coin: str):
         mint = pool["relationships"]["base_token"]["data"]["id"].split("_", 1)[1]
         votes = {"TRENDS": True}
-        smarts = self.smarts(addr, coin)
+        smarts = self.smarts(addr, coin, mint)
         votes["SMARTS"] = smarts["ok"]
         if not smarts["ok"]:
             self.d.seen[addr] = "smarts"
@@ -197,7 +243,7 @@ class MemesDesk(MemeTest):
         self.event("EXEC", coin, "wait", f"na fila com nota {score} ({len(self.ready)} na fila)")
 
     # ------------------------------------------------------------ SMARTS
-    def smarts(self, addr: str, coin: str) -> dict:
+    def smarts(self, addr: str, coin: str, mint: str = "") -> dict:
         d = self._gecko(f"/networks/solana/pools/{addr}/trades", {"trade_volume_in_usd_greater_than": self.WHALE_USD})
         since = _now() - timedelta(minutes=self.WHALE_WINDOW_MIN)
         buyers, flow, n = set(), 0.0, 0
@@ -213,17 +259,23 @@ class MemesDesk(MemeTest):
                 flow -= usd
             n += 1
         flow_txt = f"{'+' if flow >= 0 else '-'}${_pt(abs(flow) / 1000, 1)}k"
-        ok = d is not None and len(buyers) >= self.MIN_WHALES and flow > 0
-        if d is None:
+        g = self.gm(mint)
+        sm = (g["smart"] + g["kol"]) if g else 0
+        whales_ok = d is not None and len(buyers) >= self.MIN_WHALES and flow > 0
+        smart_ok = g is not None and sm >= self.GMGN_SMART_MIN and flow >= 0
+        ok = whales_ok or smart_ok
+        tag = f"{g['smart']} SM · {g['kol']} KOL · " if g else ""
+        if d is None and g is None:
             text = "sem dados: a API de trades não respondeu"
         elif ok:
-            text = f"{len(buyers)} baleias in · {flow_txt}"
-        elif flow <= 0 and n:
-            text = f"baleias a vender: {flow_txt}"
+            text = f"{tag}{len(buyers)} baleias in · {flow_txt}"
+        elif flow < 0 and n:
+            text = f"{tag}baleias a vender: {flow_txt}"
         else:
-            text = f"poucas baleias: {len(buyers)} · {flow_txt}"
-        self.event("SMARTS", coin, "pass" if ok else "reject", text, whales=len(buyers), flow=round(flow))
-        return {"ok": ok, "score": min(100, 50 + 10 * len(buyers) + (10 if flow > 20_000 else 0))}
+            text = f"{tag}poucas baleias: {len(buyers)} · {flow_txt}"
+        self.event("SMARTS", coin, "pass" if ok else "reject", text, whales=len(buyers), flow=round(flow),
+                   smart=g["smart"] if g else None, kol=g["kol"] if g else None)
+        return {"ok": ok, "score": min(100, 50 + 10 * len(buyers) + 5 * sm + (10 if flow > 20_000 else 0))}
 
     # ------------------------------------------------------------ DEBATE (bulls, bears, risk team)
     def debate(self, addr: str, pool: dict, coin: str, mint: str) -> dict:
@@ -247,6 +299,14 @@ class MemesDesk(MemeTest):
             risks.append("honeypot")
         if int(tx.get("sells") or 0) == 0:
             risks.append("ninguém vende")
+        g = self.gm(mint)
+        if g:
+            if g["rug"] > self.GMGN_RUG_MAX:
+                risks.append(f"rug {_pt(g['rug'], 2)}")
+            if g["wash"]:
+                risks.append("wash trading")
+            if max(g["bundler"], g["rat"]) > self.GMGN_BOTS_MAX:
+                risks.append(f"bots/insiders {max(g['bundler'], g['rat']):.0%}")
         fresh = self._pairs([addr]).get(addr) or {}
         fv, fpc = fresh.get("volume") or {}, fresh.get("priceChange") or {}
         vol = a.get("volume_usd") or {}
@@ -315,7 +375,8 @@ class MemesDesk(MemeTest):
             pos.decimals = decimals
             self.d.positions.append(pos)
             self.d.seen[addr] = "bought"
-        self.event("EXEC", coin, "buy", f"comprou {_pt(size / self.d.eur_usd)} € · nota {score:.0f} · papel",
+        self.event("EXEC", coin, "buy", f"comprou {_pt(size / self.d.eur_usd)} € · nota {score:.0f} · "
+                   f"via {VENUES[self.d.venue]} (papel)",
                    mint=mint, price=px, entry=entry)
 
     def execute_best(self):
@@ -371,7 +432,8 @@ class MemesDesk(MemeTest):
         self.d.trades.append(t)
         sign = "+" if pnl >= 0 else "-"
         self.event("EXEC", pos.coin, "sell", f"vendeu ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
-                   f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · papel", mint=pos.mint,
+                   f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via {VENUES[self.d.venue]} (papel)",
+                   mint=pos.mint,
                    pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4))
 
     def report(self) -> str:
@@ -390,5 +452,5 @@ class MemesDesk(MemeTest):
         return head.replace("# Teste de memecoins em papel", "# Modo memes (5 agentes) em papel") + "\n".join(lines) + "\n"
 
 
-def run(minutes: float, eur: float) -> str:
-    return MemesDesk(minutes, eur).run()
+def run(minutes: float, eur: float, venue: str = "gmgn") -> str:
+    return MemesDesk(minutes, eur, venue).run()
