@@ -227,8 +227,9 @@ class MemesDesk(MemeTest):
                 passed.append(t)
                 self._wide_verdict.pop(mint, None)
                 continue
-            if self._wide_verdict.get(mint) != reason:    # each token counted once per reason
-                self._wide_verdict[mint] = reason
+            key = reason.split(":")[0]                    # "liquidez", not "liquidez: $12k" (the value moves)
+            if self._wide_verdict.get(mint) != key:       # each token counted once per reason
+                self._wide_verdict[mint] = key
                 newly_cut.append((t, reason))
         # a couple of real cuts go on the app's Scanner card as events (event() counts those);
         # the rest are only counted, not one event per token
