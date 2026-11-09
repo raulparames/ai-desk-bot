@@ -25,7 +25,8 @@ The app shows the same five cards as the memes mode: SCANNER (TRENDS + SMARTS), 
 score 0-100), COMPOUNDER (sizing), EXECUTOR and RISK.
 
 Paper only: no wallet, no keys, no orders. INVO has no public API, so the app links to it and to the
-Hyperliquid page of each pair; deciding to trade there is yours.
+Hyperliquid page of each pair; deciding to trade there is yours. Next to every paper trade, hl_live
+builds the real Hyperliquid order in DRY-RUN (written down, never signed or sent).
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from . import hl_live
 from .config import ROOT
 
 log = logging.getLogger("perpdesk")
@@ -135,6 +137,7 @@ class PerpState:
     mode: str = "futuros"
     venue: str = "invo"
     feeds: dict = field(default_factory=dict)
+    live: dict = field(default_factory=dict)      # Hyperliquid dry-run: the real orders, never sent
 
 
 def _now() -> datetime:
@@ -202,6 +205,7 @@ class PerpDesk:
         self.queue: list[tuple[str, int, dict]] = []
         self.ready: list[dict] = []
         self.last_open = 0.0
+        self.live = hl_live.Bridge(self.info, OUT)
 
     # ------------------------------------------------------------ data
     def _eur_usd(self) -> float:
@@ -315,6 +319,7 @@ class PerpDesk:
 
     def save(self):
         with self.lock:
+            self.d.live = self.live.summary()
             eq = self.equity()
             self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
             state = asdict(self.d)
@@ -528,6 +533,7 @@ class PerpDesk:
         self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · 40% do saldo livre · "
                                         f"nota {score:.0f} · via INVO (papel)", side=name, lev=lev, price=fill, stop=stop,
                    liq=liq, eur=round(margin / self.d.eur_usd, 2), score=round(score), fill_s=round(fill_s, 1))
+        self.live.on_open(coin, side, lev, margin * lev, fill, stop, fill)
 
     # ------------------------------------------------------------ EXEC (risk every 5 s)
     def risk_loop(self):
@@ -604,6 +610,7 @@ class PerpDesk:
         q.half_done, q.half_px, q.half_ts, q.trail_on = True, px, int(time.time() * 1000), True
         q.stop = q.entry
         self._record(q, exit_px, got, m_half, fee_half, fee, f_half, "metade a 2R · stop na entrada", "half")
+        self.live.on_half(q.coin, q.side, px, q.stop)
 
     def close(self, q: Perp, px: float, reason: str, kind: str = "end"):
         with self.lock:
@@ -615,6 +622,7 @@ class PerpDesk:
             self.d.cash += got
             self.d.positions.remove(q)
             self._record(q, exit_px, got, q.margin, q.fees, fee, q.funding, reason, kind)
+            self.live.on_close(q.coin, q.side, exit_px, kind, got - q.margin - q.fees)
 
     # ------------------------------------------------------------ loop
     def run(self) -> str:

@@ -381,6 +381,7 @@ def _perps() -> dict:
              "Tudo em papel: a INVO não tem API pública, nenhuma ordem real"]
     repos = [{"agent": a, "repo": perpdesk.REPOS[a][0], "role": perpdesk.REPOS[a][1]} for a in perpdesk.AGENTS]
     running = perp_running()
+    rules.append("Dinheiro real (Hyperliquid): só dry-run. Cada trade em papel prepara a ordem real exata, com os limites, e regista-a; nada é assinado nem enviado")
     base = {"durations": list(DURATIONS), "stakes": list(STAKES), "levs": list(LEVERAGES), "rules": rules,
             "running": running, "repos": repos, "venues": ["invo"], "venue": "invo", "cards": CARDS,
             "params": {"stop_atr": p.stop_atr, "half_r": p.half_r, "trail_atr": p.trail_atr, "stack_pct": p.margin_pct,
@@ -429,7 +430,7 @@ def _perps() -> dict:
             "counts": st.get("counts", {}), "ready": st.get("ready", []), "pools_seen": st.get("coins_seen", 0),
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap, "mode": "futuros",
             "agents": st.get("agents", {}), "feeds": st.get("feeds", {}), "lev": st.get("lev", 5),
-            "cash_eur": st.get("cash", 0) / rate,
+            "cash_eur": st.get("cash", 0) / rate, "live": st.get("live") or {},
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
 
 
