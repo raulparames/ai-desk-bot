@@ -132,6 +132,7 @@ def _thin(payload: dict) -> dict:
         step = len(curve) / POINTS
         payload["curve"] = [curve[int(i * step)] for i in range(POINTS)] + [curve[-1]]
     payload["log"] = (payload.get("log") or [])[:60]
+    payload["trades"] = (payload.get("trades") or [])[:40]
     return payload
 
 

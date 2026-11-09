@@ -94,6 +94,13 @@ class Position:
     last: float
     trail_on: bool = False
     score: float = 0.0
+    series: list = field(default_factory=list)   # [ms, price] since the buy (coin page chart)
+    img: str = ""                                 # token image (DexScreener)
+    half_done: bool = False                       # half sold at 2x (memes mode)
+    half_px: float = 0.0
+    half_ts: int = 0
+    mcap: float = 0.0
+    created: str = ""                             # pool creation (coin age)
 
 
 @dataclass

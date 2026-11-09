@@ -14,11 +14,15 @@ pairs and prices of Hyperliquid, the exchange the INVO app trades on.
           (15-min ATR between 0.15% and 3%, the coin allows the leverage). Needs risk ok and 4 votes.
   ROUTER  Hyperliquid's order book for the trade size: spread of 0.05% or less and a fill within
           0.10% of the mid.
-  EXEC    paper fill walking the book plus the 0.045% taker fee. Margin 15% of the balance at the
-          session's leverage (max 10x, never more than the coin allows), at most 4 positions, one new
-          trade every 2 min. Prices every 5 s: stop 1.5 ATR, trailing from +2 ATR (1.5 ATR off the best
-          price), liquidation when the margin is gone, funding charged by the hour.
+  EXEC    paper fill walking the book plus the 0.045% taker fee. Compounder sizing: margin 40% of the
+          free cash at the session's leverage (max 10x, never more than the coin allows), at most 2 open,
+          one new trade every 2 min. Prices every 5 s: stop 1.5 ATR; at +2R (twice the stop distance)
+          half is closed and the stop moves to the entry; the rest trails 1.5 ATR off its best price.
+          Liquidation when the margin is gone, funding charged by the hour.
   CORE    opens only when all five agree (5/5).
+
+The app shows the same five cards as the memes mode: SCANNER (TRENDS + SMARTS), ANALYST (DEBATE + ROUTER,
+score 0-100), COMPOUNDER (sizing), EXECUTOR and RISK.
 
 Paper only: no wallet, no keys, no orders. INVO has no public API, so the app links to it and to the
 Hyperliquid page of each pair; deciding to trade there is yours.
@@ -46,13 +50,16 @@ STOP_FILE = OUT / "stop"
 INFO = "https://api.hyperliquid.xyz/info"
 LEADERBOARD = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 HEADERS = {"Content-Type": "application/json", "User-Agent": "ai-desk-bot-paper/1.0"}
-AGENTS = ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC")
+AGENTS = ("SCANNER", "ANALYST", "COMPOUNDER", "EXECUTOR", "RISK")
+STAGES = ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC")
+AGENT_OF = {"TRENDS": "SCANNER", "SMARTS": "SCANNER", "DEBATE": "ANALYST", "ROUTER": "ANALYST", "CORE": "ANALYST",
+            "EXEC": "EXECUTOR"}
 REPOS = {
-    "SMARTS": ("hyperliquid-dex/hyperliquid-python-sdk", "top traders · posições · leaderboard"),
-    "TRENDS": ("freqtrade/freqtrade", "tendência · EMA · ATR"),
-    "DEBATE": ("TauricResearch/TradingAgents", "debate bull/bear · equipa de risco"),
-    "ROUTER": ("ccxt/ccxt", "livro de ordens · spread"),
-    "EXEC": ("nautechsystems/nautilus_trader", "execução · stops · liquidação"),
+    "SCANNER": ("freqtrade/freqtrade", "tendência EMA 20/50 · top traders da Hyperliquid"),
+    "ANALYST": ("TauricResearch/TradingAgents", "debate bull/bear · risco · livro de ordens · nota 0–100"),
+    "COMPOUNDER": ("hyperliquid-dex/hyperliquid-python-sdk", "margem 40% do saldo livre · máx. 2 abertas"),
+    "EXECUTOR": ("ccxt/ccxt", "preenche no livro · taxa 0,045%"),
+    "RISK": ("nautechsystems/nautilus_trader", "metade a 2R · stop na entrada · trailing · liquidação"),
 }
 BUCKET = {"TRENDS": "trends", "SMARTS": "smarts", "DEBATE": "debate", "ROUTER": "router", "EXEC": "exec",
           "CORE": "core"}
@@ -70,11 +77,11 @@ class PerpParams:
     min_traders: int = 3
     max_spread: float = 0.0005
     max_impact: float = 0.0010
-    margin_pct: float = 0.15
-    max_positions: int = 4
+    margin_pct: float = 0.40      # Compounder: of the free cash
+    max_positions: int = 2
     open_every_s: float = 120
     stop_atr: float = 1.5
-    trail_start_atr: float = 2.0
+    half_r: float = 2.0           # half closes at twice the stop distance
     trail_atr: float = 1.5
     fee: float = 0.00045
     cooldown_min: float = 10
@@ -100,6 +107,10 @@ class Perp:
     funding: float = 0.0
     trail_on: bool = False
     score: float = 0.0
+    series: list = field(default_factory=list)   # [ms, price] since the open (coin page chart)
+    half_done: bool = False
+    half_px: float = 0.0
+    half_ts: int = 0
 
 
 @dataclass
@@ -276,21 +287,24 @@ class PerpDesk:
         log.info("top traders: %d accounts, positions in %d coins", min(len(good), self.p.traders), len(crowd))
 
     # ------------------------------------------------------------ bookkeeping
-    def event(self, agent: str, coin: str, verdict: str, reason: str = "", **values):
-        e = {"ts": _now().isoformat(timespec="seconds"), "agent": agent, "coin": coin, "verdict": verdict,
-             "reason": reason, **values}
+    def event(self, stage: str, coin: str, verdict: str, reason: str = "", **values):
+        """stage is the step inside an agent (TRENDS, SMARTS, ...); the app shows the agent."""
+        agent = "RISK" if verdict == "sell" else AGENT_OF.get(stage, stage)
+        e = {"ts": _now().isoformat(timespec="seconds"), "agent": agent, "stage": stage, "coin": coin,
+             "verdict": verdict, "reason": reason, **values}
         with self.lock:
             self.d.events.append(e)
             with self.events_file.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(e, ensure_ascii=False) + "\n")
             if verdict in ("reject", "skip", "kill"):
-                c = self.d.counts.setdefault(BUCKET.get(agent, "core"), {})
+                c = self.d.counts.setdefault(BUCKET.get(stage, "core"), {})
                 key = reason.split(":")[0]
                 c[key] = c.get(key, 0) + 1
             if agent in self.d.agents and verdict != "wait":
                 self.d.agents[agent] = {"coin": coin, "text": reason, "ok": verdict in ("pass", "buy", "sell"),
-                                        "ts": e["ts"]}
-        log.info("%-7s %-6s %-6s %s", agent, coin, verdict, reason)
+                                        "ts": e["ts"], "verdict": verdict,
+                                        **{k: values[k] for k in ("score", "eur", "fill_s", "kind", "side") if k in values}}
+        log.info("%-7s %-6s %-6s %s", stage, coin, verdict, reason)
 
     def value(self, q: Perp) -> float:
         return max(0.0, q.margin + q.side * q.qty * (q.last - q.entry) - q.funding)
@@ -376,7 +390,8 @@ class PerpDesk:
             return self.event("EXEC", coin, "skip", f"cheio: {self.p.max_positions} posições e fila")
         score = round((debate["score"] + route["score"] + votes_score(self.crowd.get(coin), side)) / 3)
         name = "long" if side == 1 else "short"
-        self.event("CORE", coin, "pass", f"5/5 agentes concordaram · {name} · nota {score}", votes=votes, side=name)
+        self.event("CORE", coin, "pass", f"passou · {name} · nota {score} · 5/5 de acordo", votes=votes, side=name,
+                   score=score)
         self.ready.append({"coin": coin, "side": side, "score": score, "since": time.time(), "atr": ctx["atr"]})
         self.event("EXEC", coin, "wait", f"na fila: {name} com nota {score}")
 
@@ -428,7 +443,8 @@ class PerpDesk:
         ok = not risks and bulls >= 4
         name = "long" if side == 1 else "short"
         text = f"{name}: bull {bulls} / bear {5 - bulls} · " + ("risco ok" if not risks else "risco: " + ", ".join(risks))
-        self.event("DEBATE", coin, "pass" if ok else "reject", text, votes=votes, rsi=round(r), funding=funding)
+        self.event("DEBATE", coin, "pass" if ok else "reject", text, votes=votes, rsi=round(r), funding=funding,
+                   score=40 + 12 * bulls)
         return {"ok": ok, "score": 40 + 12 * bulls}
 
     # ------------------------------------------------------------ ROUTER
@@ -468,8 +484,9 @@ class PerpDesk:
 
     # ------------------------------------------------------------ EXEC (open)
     def margin(self) -> float:
+        """Compounder: 40% of the free cash (wins roll into the next trade)."""
         with self.lock:
-            return min(self.equity() * self.p.margin_pct, self.d.cash)
+            return self.d.cash * self.p.margin_pct
 
     def leverage(self, coin: str) -> float:
         return float(min(self.d.lev, self.meta.get(coin, {}).get("max_lev", 1)))
@@ -488,7 +505,9 @@ class PerpDesk:
 
     def open(self, coin: str, side: int, a: float, score: float):
         lev, margin = self.leverage(coin), self.margin()
+        t0 = time.time()
         f = self.book_fill(coin, side, margin * lev)
+        fill_s = time.time() - t0
         name = "long" if side == 1 else "short"
         if not f or not f["fill"]:
             return self.event("EXEC", coin, "skip", "sem preço no livro na hora de abrir")
@@ -504,9 +523,11 @@ class PerpDesk:
             self.d.cash -= margin + fee
             q = Perp(uuid.uuid4().hex[:6], coin, side, lev, _now().isoformat(timespec="seconds"), fill, qty, margin,
                      a, stop, liq, fill, fill, fees=fee, score=score)
+            q.series = [[int(time.time() * 1000), fill]]
             self.d.positions.append(q)
-        self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · nota {score:.0f} · "
-                                        "via INVO (papel)", side=name, lev=lev, price=fill, stop=stop, liq=liq)
+        self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · 40% do saldo livre · "
+                                        f"nota {score:.0f} · via INVO (papel)", side=name, lev=lev, price=fill, stop=stop,
+                   liq=liq, eur=round(margin / self.d.eur_usd, 2), score=round(score), fill_s=round(fill_s, 1))
 
     # ------------------------------------------------------------ EXEC (risk every 5 s)
     def risk_loop(self):
@@ -538,38 +559,62 @@ class PerpDesk:
                 q.funding += q.side * q.qty * px * self.meta.get(q.coin, {}).get("funding", 0.0) * hours
                 q.last = px
                 q.peak = max(q.peak, px) if q.side == 1 else min(q.peak, px)
-                if (px - q.entry) * q.side >= self.p.trail_start_atr * q.atr:
-                    q.trail_on = True
+                _mark(q.series, px)
+                r = self.p.stop_atr * q.atr
                 trail = q.peak - q.side * self.p.trail_atr * q.atr
                 if (px - q.liq) * q.side <= 0:
-                    self.close(q, px, "liquidada")
+                    self.close(q, px, "liquidada", "liq")
                 elif (px - q.stop) * q.side <= 0:
-                    self.close(q, px, f"stop {self.p.stop_atr:g} ATR")
-                elif q.trail_on and (px - trail) * q.side <= 0:
-                    self.close(q, px, "trailing stop")
+                    self.close(q, px, "stop na entrada" if q.half_done else f"stop {self.p.stop_atr:g} ATR", "stop")
+                elif not q.half_done and (px - q.entry) * q.side >= self.p.half_r * r:
+                    self._half(q, px)
+                elif q.half_done and (px - trail) * q.side <= 0:
+                    self.close(q, px, f"trailing {self.p.trail_atr:g} ATR do máximo", "trail")
                 elif final:
-                    self.close(q, px, "fim da sessão")
+                    self.close(q, px, "fim da sessão", "end")
 
-    def close(self, q: Perp, px: float, reason: str):
+    def _record(self, q: Perp, exit_px: float, got: float, margin: float, fee_in: float, fee_out: float,
+                funding: float, reason: str, kind: str):
+        pnl = got - margin - fee_in
+        name = "long" if q.side == 1 else "short"
+        t = {"id": q.id, "coin": q.coin, "side": name, "lev": q.lev, "opened": q.opened,
+             "closed": _now().isoformat(timespec="seconds"), "margin": margin, "entry": q.entry, "exit": exit_px,
+             "pnl_usd": pnl, "pnl_eur": pnl / self.d.eur_usd, "pct": pnl / margin if margin else 0, "reason": reason,
+             "kind": kind, "funding": funding, "fees": fee_in + fee_out, "score": q.score,
+             "mult": (margin + pnl) / margin if margin else 1, "half_px": q.half_px, "half_ts": q.half_ts,
+             "stop": q.stop, "series": _thin_series(q.series, 120)}
+        self.d.trades.append(t)
+        sign = "+" if pnl >= 0 else "-"
+        self.event("EXEC", q.coin, "sell", f"fechou {name} ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
+                                           f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via INVO (papel)",
+                   side=name, pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4), kind=kind,
+                   mult=round(t["mult"], 2))
+
+    def _half(self, q: Perp, px: float):
+        """+2R: close half, move the stop to the entry, let the rest trail."""
+        exit_px = px * (1 - q.side * 0.0002)
+        half, m_half, f_half, fee_half = q.qty / 2, q.margin / 2, q.funding / 2, q.fees / 2
+        fee = half * exit_px * self.p.fee
+        got = max(0.0, m_half + q.side * half * (exit_px - q.entry) - f_half - fee)
+        self.d.cash += got
+        q.qty -= half
+        q.margin -= m_half
+        q.funding -= f_half
+        q.fees -= fee_half
+        q.half_done, q.half_px, q.half_ts, q.trail_on = True, px, int(time.time() * 1000), True
+        q.stop = q.entry
+        self._record(q, exit_px, got, m_half, fee_half, fee, f_half, "metade a 2R · stop na entrada", "half")
+
+    def close(self, q: Perp, px: float, reason: str, kind: str = "end"):
         with self.lock:
             if q not in self.d.positions:
                 return
             exit_px = px * (1 - q.side * 0.0002)              # half a typical spread against us
             fee = q.qty * exit_px * self.p.fee
-            got = 0.0 if reason == "liquidada" else max(0.0, q.margin + q.side * q.qty * (exit_px - q.entry) - q.funding - fee)
+            got = 0.0 if kind == "liq" else max(0.0, q.margin + q.side * q.qty * (exit_px - q.entry) - q.funding - fee)
             self.d.cash += got
             self.d.positions.remove(q)
-            pnl = got - q.margin - q.fees
-            name = "long" if q.side == 1 else "short"
-            t = {"id": q.id, "coin": q.coin, "side": name, "lev": q.lev, "opened": q.opened,
-                 "closed": _now().isoformat(timespec="seconds"), "margin": q.margin, "entry": q.entry, "exit": exit_px,
-                 "pnl_usd": pnl, "pnl_eur": pnl / self.d.eur_usd, "pct": pnl / q.margin, "reason": reason,
-                 "funding": q.funding, "fees": q.fees + fee, "score": q.score}
-            self.d.trades.append(t)
-        sign = "+" if pnl >= 0 else "-"
-        self.event("EXEC", q.coin, "sell", f"fechou {name} ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
-                                           f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via INVO (papel)",
-                   side=name, pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4))
+            self._record(q, exit_px, got, q.margin, q.fees, fee, q.funding, reason, kind)
 
     # ------------------------------------------------------------ loop
     def run(self) -> str:
@@ -634,13 +679,26 @@ class PerpDesk:
             lines.append(f"- {t['closed'][11:16]} {t['coin']} {t['side']} {t['lev']:g}x: {'+' if t['pnl_eur'] >= 0 else ''}"
                          f"{_pt(t['pnl_eur'])} € ({t['reason']})")
         lines += ["", "## Onde as moedas foram cortadas", ""]
-        for agent in AGENTS:
+        for agent in STAGES:
             c = d.counts.get(BUCKET[agent], {})
             lines.append(f"- **{agent}:** " + (", ".join(f"{k} ({v})" for k, v in sorted(c.items(), key=lambda kv: -kv[1]))
                                                   if c else "nada cortado"))
         lines += ["", "Um resultado de poucas horas é sobretudo sorte. Esta mesa não tem backtest: as regras são "
                       "razoáveis, não provadas."]
         return "\n".join(lines) + "\n"
+
+
+def _mark(series: list, px: float, cap: int = 600):
+    series.append([int(time.time() * 1000), px])
+    if len(series) > cap:
+        series[:] = series[:cap // 2:2] + series[cap // 2:]
+
+
+def _thin_series(series: list, n: int) -> list:
+    if len(series) <= n:
+        return list(series)
+    step = len(series) / n
+    return [series[int(i * step)] for i in range(n)] + [series[-1]]
 
 
 def votes_score(c: dict | None, side: int) -> float:

@@ -1,4 +1,12 @@
-"""Memes mode: a 5-agent Solana memecoin desk in paper, laid out like the "gmgn mode" video.
+"""Memes mode: a Solana memecoin desk in paper, laid out like the "trading desk" videos.
+
+The app shows five agents: SCANNER (finds coins: the TRENDS and SMARTS steps below), ANALYST (scores
+them 0-100: DEBATE and ROUTER), COMPOUNDER (sizes every buy), EXECUTOR (buys) and RISK (sells).
+Compounder rules, as in the video: every buy is 40% of the free cash, never more than 2 open, no adding
+to a coin already held. At 2x half is sold (the entry comes back); the rest rides a trailing stop 10%
+off its high. Until 2x prints there is a hard stop at -8%.
+
+Steps inside the agents (originally laid out like the "gmgn mode" video):
 
     python -m deskbot memedesk --minutes 720 --eur 110
 
@@ -45,21 +53,27 @@ log = logging.getLogger("memetest")
 SOL_MINT = "So11111111111111111111111111111111111111112"
 JUP_QUOTE = "https://lite-api.jup.ag/swap/v1/quote"
 JUP_PRICE = "https://lite-api.jup.ag/price/v3"
-AGENTS = ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC")
+AGENTS = ("SCANNER", "ANALYST", "COMPOUNDER", "EXECUTOR", "RISK")
+STAGES = ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC")
+AGENT_OF = {"TRENDS": "SCANNER", "SMARTS": "SCANNER", "DEBATE": "ANALYST", "ROUTER": "ANALYST", "CORE": "ANALYST",
+            "EXEC": "EXECUTOR"}
 REPOS = {
-    "SMARTS": ("GMGNAI/gmgn-skills", "smart money · baleias · segurança"),
-    "TRENDS": ("8bitsats/Solana-MCP-Trading-Server", "tokens em alta"),
-    "DEBATE": ("TauricResearch/TradingAgents", "debate bull/bear · equipa de risco"),
-    "ROUTER": ("sendaifun/solana-agent-kit", "rotas Jupiter"),
-    "EXEC": ("0xsyncroot/opentrade", "execução rápida"),
+    "SCANNER": ("8bitsats/Solana-MCP-Trading-Server", "tokens em alta · baleias · smart money (GMGN)"),
+    "ANALYST": ("TauricResearch/TradingAgents", "debate bull/bear · risco · rota · nota 0–100"),
+    "COMPOUNDER": ("GMGNAI/gmgn-skills", "40% do saldo livre · máx. 2 abertas · rola os ganhos"),
+    "EXECUTOR": ("sendaifun/solana-agent-kit", "cotação Jupiter · compra em papel"),
+    "RISK": ("0xsyncroot/opentrade", "metade a 2× · trailing 10% · stop −8%"),
 }
+HALF_AT = 2.0
 VENUES = {"gmgn": "GMGN", "fomo": "FOMO"}
 BUCKET = {"TRENDS": "trends", "SMARTS": "smarts", "DEBATE": "debate", "ROUTER": "router", "EXEC": "exec",
           "CORE": "core"}
 
 
 def memes_params() -> MemeParams:
-    return MemeParams(stop_pct=0.08, cost_per_side=0.005)
+    # Compounder: 40% of the free cash per buy, max 2 open, trail 10% off the high after the half at 2x
+    return MemeParams(stop_pct=0.08, cost_per_side=0.005, stack_pct=0.40, max_positions=2, trail_pct=0.10,
+                      timeout_h=1e9)
 
 
 class MemesDesk(MemeTest):
@@ -87,20 +101,24 @@ class MemesDesk(MemeTest):
         self._rank: dict[str, int] = {}
 
     # ------------------------------------------------------------ helpers
-    def event(self, agent: str, coin: str, verdict: str, reason: str = "", **values):
-        e = {"ts": _now().isoformat(timespec="seconds"), "agent": agent, "coin": coin, "verdict": verdict,
-             "reason": reason, **values}
+    def event(self, stage: str, coin: str, verdict: str, reason: str = "", **values):
+        """stage is the step inside an agent (TRENDS, SMARTS, ...); the app shows the agent."""
+        agent = "RISK" if verdict == "sell" else AGENT_OF.get(stage, stage)
+        e = {"ts": _now().isoformat(timespec="seconds"), "agent": agent, "stage": stage, "coin": coin,
+             "verdict": verdict, "reason": reason, **values}
         with self.lock:
             self.d.events.append(e)
             with self.events_file.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(e, ensure_ascii=False) + "\n")
             if verdict in ("cut", "reject", "skip", "kill"):
-                c = self.d.counts.setdefault(BUCKET.get(agent, "core"), {})
+                c = self.d.counts.setdefault(BUCKET.get(stage, "core"), {})
                 key = reason.split(":")[0]
                 c[key] = c.get(key, 0) + 1
             if agent in self.d.agents and verdict != "wait":
                 self.d.agents[agent] = {"coin": coin, "text": reason, "ok": verdict in ("pass", "buy", "sell"),
-                                        "ts": e["ts"]}
+                                        "ts": e["ts"], "verdict": verdict,
+                                        **{k: values[k] for k in ("score", "img", "eur", "fill_s", "kind") if k in values}}
+        agent = stage
         log.info("%-7s %-12s %-6s %s", agent, coin, verdict, reason)
 
     def sol_usd(self) -> float:
@@ -126,8 +144,9 @@ class MemesDesk(MemeTest):
             return None
 
     def trade_size(self, liq: float) -> float:
+        """Compounder: 40% of the free cash (wins roll into the next buy), at most 2% of the pool."""
         with self.lock:
-            return min(self.equity() * self.p.stack_pct, liq * self.p.max_pool_pct, self.d.cash)
+            return min(self.d.cash * self.p.stack_pct, liq * self.p.max_pool_pct)
 
     # ------------------------------------------------------------ TRENDS
     def scan(self):
@@ -235,7 +254,7 @@ class MemesDesk(MemeTest):
             self.d.seen[addr] = "exec"
             return self.event("EXEC", coin, "skip", "cheio: 5 posições e fila longa")
         score = round((smarts["score"] + debate["score"] + route["score"]) / 3)
-        self.event("CORE", coin, "pass", f"5/5 agentes concordaram · nota {score}", votes=votes)
+        self.event("CORE", coin, "pass", f"passou · nota {score} · 5/5 de acordo", votes=votes, score=score)
         self.d.seen[addr] = "ready"
         self.ready.append({"score": score, "since": _now().isoformat(timespec="seconds"), "addr": addr,
                            "pool": pool, "coin": coin, "mint": mint, "decimals": debate["decimals"],
@@ -326,7 +345,7 @@ class MemesDesk(MemeTest):
         bears = len(votes) - bulls
         ok = not risks and bulls >= 4
         text = f"bull {bulls} / bear {bears} · " + ("risco ok" if not risks else "risco: " + ", ".join(risks))
-        self.event("DEBATE", coin, "pass" if ok else "reject", text, votes=votes, risks=risks)
+        self.event("DEBATE", coin, "pass" if ok else "reject", text, votes=votes, risks=risks, score=40 + 12 * bulls)
         decimals = int((mi or {}).get("decimals") or 6)
         return {"ok": ok, "score": 40 + 12 * bulls, "decimals": decimals}
 
@@ -343,7 +362,8 @@ class MemesDesk(MemeTest):
         impact = _f(q.get("priceImpactPct"))
         hops = " → ".join(x["swapInfo"]["label"] for x in q.get("routePlan", [])[:2]) or "rota direta"
         ok = impact <= self.MAX_IMPACT
-        self.event("ROUTER", coin, "pass" if ok else "reject", f"jupiter · {_pt(impact * 100, 1)}% slip · {hops}")
+        self.event("ROUTER", coin, "pass" if ok else "reject", f"jupiter · {_pt(impact * 100, 1)}% slip · {hops}",
+                   impact=round(impact, 4))
         return {"ok": ok, "score": 100 if impact < 0.005 else 80, "impact": impact, "hops": hops}
 
     # ------------------------------------------------------------ EXEC (buy)
@@ -359,7 +379,9 @@ class MemesDesk(MemeTest):
             return self.event("EXEC", coin, "skip", f"fugiu: +{(px / scan_px - 1) * 100:.0f}% desde o TRENDS")
         size = self.trade_size(liq)
         sol = self.sol_usd()
+        t0 = time.time()
         q = self.quote(SOL_MINT, mint, size / sol * 1e9) if sol > 0 and size >= 5 else None
+        fill_s = time.time() - t0
         if not q:
             return self.event("EXEC", coin, "skip", "sem rota Jupiter na hora de comprar")
         tokens = int(q["outAmount"]) / 10 ** decimals
@@ -373,11 +395,16 @@ class MemesDesk(MemeTest):
             pos = Position(uuid.uuid4().hex[:6], coin, pool["attributes"]["name"], addr, mint,
                            _now().isoformat(timespec="seconds"), px, entry, tokens, size, liq, px, px, score=score)
             pos.decimals = decimals
+            pos.img = str((live.get("info") or {}).get("imageUrl") or "")
+            pos.mcap = _f(live.get("marketCap") or live.get("fdv"))
+            pos.created = str(pool["attributes"].get("pool_created_at") or "")
+            pos.series = [[int(time.time() * 1000), px]]
             self.d.positions.append(pos)
             self.d.seen[addr] = "bought"
-        self.event("EXEC", coin, "buy", f"comprou {_pt(size / self.d.eur_usd)} € · nota {score:.0f} · "
+        self.event("EXEC", coin, "buy", f"comprou {_pt(size / self.d.eur_usd)} € · 40% do saldo livre · nota {score:.0f} · "
                    f"via {VENUES[self.d.venue]} (papel)",
-                   mint=mint, price=px, entry=entry)
+                   mint=mint, price=px, entry=entry, eur=round(size / self.d.eur_usd, 2), score=round(score),
+                   fill_s=round(fill_s, 1), img=pos.img)
 
     def execute_best(self):
         for r in list(self.ready):
@@ -410,46 +437,112 @@ class MemesDesk(MemeTest):
                 log.exception("Risk tick failed, carrying on")
             self.stop.wait(max(0.5, self.RISK_EVERY_S - (time.time() - tick)))
 
-    def _close(self, pos: Position, px: float, reason: str):
-        """Exit priced with a real Jupiter sell quote when there is one."""
+    def _apply_risk(self, live: dict, final: bool):
+        """RISK every 5 s: hard stop -8% until 2x prints; at 2x half comes back; the rest trails 10% off its high."""
+        for pos in list(self.d.positions):
+            pr = live.get(pos.pool)
+            if pr is None:
+                if final:
+                    self.close(pos, pos.last, "fim da sessão (último preço)")
+                continue
+            px, liq = _f(pr.get("priceUsd")), _f((pr.get("liquidity") or {}).get("usd"))
+            if px <= 0:
+                continue
+            pos.last, pos.liquidity = px, liq
+            pos.mcap = _f(pr.get("marketCap") or pr.get("fdv"), pos.mcap)
+            pos.peak = max(pos.peak, px)
+            _mark(pos.series, px)
+            mult = px / pos.raw_entry
+            if liq < 1_000:
+                self.close(pos, px, "liquidez retirada", "liq")
+            elif not pos.half_done and mult <= 1 - self.p.stop_pct:
+                self.close(pos, px, f"stop −{self.p.stop_pct:.0%}", "stop")
+            elif not pos.half_done and mult >= HALF_AT:
+                self._half(pos, px)
+            elif pos.half_done and px <= pos.peak * (1 - self.p.trail_pct):
+                self.close(pos, px, f"trailing {self.p.trail_pct:.0%} do máximo", "trail")
+            elif final:
+                self.close(pos, px, "fim da sessão", "end")
+
+    def close(self, pos: Position, px: float, reason: str, kind: str = "end"):
+        with self.lock:
+            if pos in self.d.positions:
+                self._close(pos, px, reason, kind)
+
+    def _sell(self, pos: Position, qty: float, px: float) -> float:
+        """Dollars a sale of qty would bring: a real Jupiter sell quote when there is one."""
         sol = self._sol[0]
-        got = None
         if sol > 0:
-            raw = int(pos.qty * 10 ** getattr(pos, "decimals", 6))
+            raw = int(qty * 10 ** getattr(pos, "decimals", 6))
             q = self.quote(pos.mint, SOL_MINT, raw, self.http_risk) if raw > 0 else None
             if q:
-                got = int(q["outAmount"]) / 1e9 * sol * (1 - self.p.cost_per_side)
-        if got is None:  # no route right now: price model with the pool's depth
-            impact = 2 * pos.qty * px / max(pos.liquidity, 1.0)
-            got = pos.qty * px * (1 - self.p.cost_per_side - min(impact, 0.5))
-        self.d.cash += got
-        self.d.positions.remove(pos)
-        pnl = got - pos.cost_usd
-        t = {"id": pos.id, "coin": pos.coin, "mint": pos.mint, "opened": pos.opened,
-             "closed": _now().isoformat(timespec="seconds"), "cost_usd": pos.cost_usd, "got_usd": got, "pnl_usd": pnl,
-             "pnl_eur": pnl / self.d.eur_usd, "pct": got / pos.cost_usd - 1, "raw_move": px / pos.raw_entry - 1,
-             "peak_move": pos.peak / pos.raw_entry - 1, "reason": reason, "score": pos.score}
+                return int(q["outAmount"]) / 1e9 * sol * (1 - self.p.cost_per_side)
+        impact = 2 * qty * px / max(pos.liquidity, 1.0)   # no route right now: price model with the pool's depth
+        return qty * px * (1 - self.p.cost_per_side - min(impact, 0.5))
+
+    def _trade(self, pos: Position, px: float, got: float, cost: float, reason: str, kind: str) -> dict:
+        pnl = got - cost
+        t = {"id": pos.id, "coin": pos.coin, "mint": pos.mint, "img": pos.img, "opened": pos.opened,
+             "closed": _now().isoformat(timespec="seconds"), "cost_usd": cost, "got_usd": got, "pnl_usd": pnl,
+             "pnl_eur": pnl / self.d.eur_usd, "pct": got / cost - 1 if cost else 0, "raw_move": px / pos.raw_entry - 1,
+             "peak_move": pos.peak / pos.raw_entry - 1, "reason": reason, "kind": kind, "score": pos.score,
+             "mult": px / pos.raw_entry, "entry": pos.raw_entry, "exit": px, "half_px": pos.half_px,
+             "half_ts": pos.half_ts, "series": _thin_series(pos.series, 120), "mcap": pos.mcap, "created": pos.created}
         self.d.trades.append(t)
         sign = "+" if pnl >= 0 else "-"
         self.event("EXEC", pos.coin, "sell", f"vendeu ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
                    f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via {VENUES[self.d.venue]} (papel)",
-                   mint=pos.mint,
-                   pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4))
+                   mint=pos.mint, pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4),
+                   mult=round(t["mult"], 2), kind=kind, img=pos.img)
+        return t
+
+    def _half(self, pos: Position, px: float):
+        """2x: sell half, which brings the entry back; the other half rides."""
+        half = pos.qty / 2
+        got = self._sell(pos, half, px)
+        cost = pos.cost_usd / 2
+        self.d.cash += got
+        pos.qty -= half
+        pos.cost_usd -= cost
+        pos.half_done, pos.half_px, pos.half_ts = True, px, int(time.time() * 1000)
+        pos.trail_on = True
+        self._trade(pos, px, got, cost, "metade a 2× · entrada de volta", "half")
+
+    def _close(self, pos: Position, px: float, reason: str, kind: str = "end"):
+        got = self._sell(pos, pos.qty, px)
+        self.d.cash += got
+        self.d.positions.remove(pos)
+        self._trade(pos, px, got, pos.cost_usd, reason, kind)
 
     def report(self) -> str:
         base = super().report()
         # the base report lists the classic agents' cuts; replace that part with the five agents
         head = base.split("## Onde as moedas foram cortadas")[0]
         lines = ["## Onde as moedas foram cortadas", ""]
-        for agent in ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC"):
+        for agent in STAGES:
             c = self.d.counts.get(BUCKET[agent], {})
             lines.append(f"- **{agent}:** " + (", ".join(f"{k} ({v})" for k, v in sorted(c.items(), key=lambda kv: -kv[1]))
                                                   if c else "nada cortado"))
         wins = [t for t in self.d.trades if t["pnl_usd"] > 0]
         rate = f"{len(wins) / len(self.d.trades):.0%}" if self.d.trades else "—"
-        lines += ["", f"Acerto: {rate}. Stop de −8% em cada trade, como no vídeo. Preços de entrada e saída com "
-                      "cotações reais da Jupiter, mais 0,5% de custos. Um resultado de poucas horas é sobretudo sorte."]
+        lines += ["", f"Acerto: {rate}. Compounder: 40% do saldo livre por compra, no máximo 2 abertas, metade a 2×, "
+                      "trailing de 10% depois, stop −8% antes. Preços de entrada e saída com cotações reais da Jupiter, "
+                      "mais 0,5% de custos. Um resultado de poucas horas é sobretudo sorte."]
         return head.replace("# Teste de memecoins em papel", "# Modo memes (5 agentes) em papel") + "\n".join(lines) + "\n"
+
+
+def _mark(series: list, px: float, cap: int = 600):
+    """Price point for the coin page; past the cap the older points are thinned out."""
+    series.append([int(time.time() * 1000), px])
+    if len(series) > cap:
+        series[:] = series[:cap // 2:2] + series[cap // 2:]
+
+
+def _thin_series(series: list, n: int) -> list:
+    if len(series) <= n:
+        return list(series)
+    step = len(series) / n
+    return [series[int(i * step)] for i in range(n)] + [series[-1]]
 
 
 def run(minutes: float, eur: float, venue: str = "gmgn") -> str:

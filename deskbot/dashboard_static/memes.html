@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0c0f">
+<meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -11,181 +11,295 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="icon" href="/icon-180.png">
-<title>AI Desk Bot · modo memes</title>
+<title>AI Desk Bot · mesa</title>
 <style>
 :root{
   color-scheme:dark;
-  --bg:#0b0c0f;--panel:#14161b;--panel-2:#1b1e25;--line:#23262e;
-  --t1:#f4f5f7;--t2:#a2a6b2;--t3:#6b707d;
-  --green:#22d37a;--green-dim:rgba(34,211,122,.14);--red:#ff5b5b;--red-dim:rgba(255,91,91,.14);
-  --smarts:#22d37a;--trends:#4cc3ff;--debate:#a98bff;--router:#ffb020;--exec:#ff5fa8;
-  --display:-apple-system,"SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --bg:#000;--card:#111215;--card-2:#191b20;--line:#1f2228;
+  --t1:#f5f6f8;--t2:#a0a4ae;--t3:#666a73;
+  --green:#34d07f;--green-dim:rgba(52,208,127,.16);--red:#ff5c5c;--red-dim:rgba(255,92,92,.15);
+  --yellow:#ffc83d;--blue:#4c8dff;--blue-dim:rgba(76,141,255,.14);--risk:#ff8a3d;
+  --sans:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--t1);font:14px/1.4 var(--display);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
-body{padding:calc(var(--top) + 4px) 0 calc(var(--bottom) + 24px)}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.35 var(--sans);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+body{padding:calc(var(--top) + 6px) 0 calc(var(--bottom) + 84px);overflow-x:hidden}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
-button:focus-visible,a:focus-visible{outline:2px solid var(--trends);outline-offset:2px;border-radius:8px}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:10px}
 a{color:inherit;text-decoration:none}
 [hidden]{display:none!important}
-.wrap{max-width:560px;margin:0 auto;padding:0 14px}
-.mono{font-family:var(--mono)}
-.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}
+.wrap{max-width:560px;margin:0 auto;padding:0 18px}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}.mono{font-family:var(--mono)}
 
-/* boot */
-.boot{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;transition:opacity .35s}
-.boot.out{opacity:0;pointer-events:none}
-.boot img{width:92px;height:92px;border-radius:24px}
-.boot b{font:700 30px var(--display)}
-.boot .sub{font:12px var(--mono);color:var(--t3)}
-.clone{width:100%;max-width:330px;margin-top:26px;font:11.5px var(--mono);color:var(--t2)}
-.clone .h{color:var(--t3);margin-bottom:8px}
-.clone div.r{display:flex;justify-content:space-between;gap:8px;margin:5px 0}
-.clone .bar{height:3px;background:var(--panel-2);border-radius:2px;overflow:hidden;margin-top:14px}
-.clone .bar i{display:block;height:100%;width:0;background:var(--t1);transition:width 1.6s ease}
+/* header */
+.hdr{display:flex;align-items:center;gap:10px;height:48px}
+.brand{display:flex;align-items:center;gap:9px;min-height:44px}
+.brand img{width:32px;height:32px;border-radius:50%}
+.brand b{font-size:19px;font-weight:700;white-space:nowrap}
+.brand span{color:var(--t3);font-size:18px}
+.livepill{margin-left:auto;min-height:36px;padding:0 16px;border-radius:999px;background:var(--green);color:#03140b;font-weight:700;font-size:15px;display:inline-flex;align-items:center;gap:7px}
+.livepill i{width:7px;height:7px;border-radius:50%;background:#03140b;animation:blink 1.4s infinite alternate}
+.livepill.off{background:var(--card-2);color:var(--t2)}.livepill.off i{background:var(--t3);animation:none}
+@keyframes blink{from{opacity:.35}to{opacity:1}}
+.conn{font-size:14px;color:var(--t2);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
+.conn b{color:var(--t1);font-weight:700}
+.conn .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
 
-/* top */
-.top{display:flex;align-items:center;gap:8px;height:50px}
-.top img{width:30px;height:30px;border-radius:8px}
-.top .nm{font-weight:700;font-size:17px;white-space:nowrap}
-.chip{font:11px var(--mono);color:var(--t3);background:var(--panel-2);border-radius:6px;padding:2px 7px}
-.live{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--green)}
-.live i{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.4s infinite alternate}
-.live.off{color:var(--t3)}.live.off i{background:var(--t3);animation:none}
-@keyframes blink{from{opacity:.3}to{opacity:1}}
-.back{width:40px;height:44px;margin-left:-10px;display:grid;place-items:center;font-size:24px;color:var(--t3)}
-
-/* ticker */
-.tick{overflow:hidden;margin:0 -14px;white-space:nowrap;border-bottom:1px solid var(--line);-webkit-mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
-.tick .run{display:inline-flex;gap:16px;padding:6px 0;animation:marq 40s linear infinite}
-.tick span{display:inline-flex;align-items:center;gap:5px;font:11.5px var(--mono)}
-.tick i{width:13px;height:13px;border-radius:50%;display:inline-block}
-@keyframes marq{to{transform:translateX(-50%)}}
-
-/* headline */
-.cap{font:11.5px var(--mono);color:var(--t3);margin:10px 0 0}
-.balrow{display:flex;align-items:flex-start;justify-content:space-between}
-.bal{font:700 clamp(44px,13vw,58px)/1.05 var(--display);letter-spacing:-.02em}
-.bal .c{color:var(--t3)}
-.delta{font:12px var(--mono);border-radius:6px;padding:2px 6px;margin-top:10px;background:var(--green-dim);color:var(--green)}
-.delta.neg{background:var(--red-dim);color:var(--red)}
-.meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;font:12.5px var(--mono);color:var(--t2)}
-.pill{font:700 12px var(--mono);border-radius:999px;padding:2px 9px;background:var(--t1);color:#000}
-.sub2{display:flex;justify-content:space-between;font:12px var(--mono);margin-top:4px}
+/* balance */
+.bal{font:700 clamp(50px,14.5vw,66px)/1.02 var(--sans);letter-spacing:-.025em;margin-top:6px;white-space:nowrap}
+.bal.upc{color:var(--green)}
+.dg{display:inline-block;height:1.02em;overflow:hidden;vertical-align:top}
+.dg .col{display:block;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+.dg .col span{display:block;height:1.02em}
+.chg{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:16px;font-weight:600}
+.mult{font-weight:800;font-size:15px;border-radius:9px;padding:2px 8px;background:var(--green);color:#03140b}
+.mult.neg{background:var(--red);color:#1c0505}
 
 /* chart */
-.chart{position:relative;height:150px;margin:6px -14px 0;touch-action:pan-y}
-.chart canvas{display:block;width:100%;height:100%}
-.legend{display:flex;justify-content:space-between;font:10.5px var(--mono);color:var(--t3);margin-top:2px}
+.chart{position:relative;height:200px;margin:12px -18px 0;touch-action:pan-y}
+.chart canvas{position:absolute;inset:0;width:100%;height:100%}
+.marks{position:absolute;inset:0;pointer-events:none}
+.bub{position:absolute;transform:translate(-50%,-100%);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:12px;font-weight:600;padding:3px 9px 3px 4px;border-radius:999px;background:#0d1426;border:1px solid #2b4a8f;color:#dbe6ff}
+.bub.win{background:#0b2016;border-color:#1f7a4a;color:var(--green)}
+.bub.loss{background:#2a0e0e;border-color:#8a2a2a;color:#ff8a8a}
+.ranges{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.ranges button{min-width:44px;min-height:36px;border-radius:999px;font-weight:700;font-size:15px;color:var(--green)}
+.ranges button[aria-pressed="true"]{background:var(--green);color:#03140b;padding:0 12px}
+.ranges button[aria-pressed="true"]::before{content:"• "}
 
-/* boxes */
-.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:12px}
-.box-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.box-h b{font-size:13.5px}
-.box-h span{font:11px var(--mono);color:var(--green)}
-.log{font:11.5px/1.55 var(--mono)}
-.log div{display:grid;grid-template-columns:42px 36px minmax(0,1fr) auto;gap:6px;align-items:center;padding:2px 0}
-.log .tm{color:var(--t3)}
-.log .tg{font-weight:700}.log .tg.buy{color:var(--green)}.log .tg.sell{color:var(--red)}
-.log .co{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.log .co i{width:12px;height:12px;border-radius:50%;flex:none}
-.log .vl{color:var(--t2);white-space:nowrap}
-.ag{display:grid;grid-template-columns:22px 60px minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 0;font-size:12.5px;border-top:1px solid var(--line)}
-.ag:first-of-type{border-top:0}
-.ag .nm{font:700 11.5px var(--mono)}
-.ag .rd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t2);font:11.5px var(--mono)}
-.ag .rd b{color:var(--t1);font-weight:600}
-.ag .src{font:10.5px var(--mono);color:var(--t3);white-space:nowrap}
-.ag .no{color:var(--red)}
-.graph svg{display:block;width:100%;height:auto}
-.btns{display:flex;gap:8px;margin-top:12px}
-.btn{flex:1;min-height:46px;border-radius:999px;background:var(--panel-2);font-weight:700;font-size:14px}
-.btn.primary{background:var(--t1);color:#000}
-.btn:disabled{opacity:.45}
+/* section heads */
+.sh{display:flex;justify-content:space-between;align-items:baseline;margin:22px 0 10px}
+.sh h2{margin:0;font-size:23px;font-weight:700}
+.sh a,.sh span{color:var(--green);font-size:16px}
+
+/* agent cards */
+.cards{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -18px;padding:0 18px 4px;scrollbar-width:none}
+.cards::-webkit-scrollbar{display:none}
+.ac{flex:0 0 min(64vw,236px);scroll-snap-align:start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;min-height:158px}
+.ac.wide{width:100%;min-height:0;margin-bottom:12px}
+.ach{display:flex;gap:9px;align-items:center;margin-bottom:10px}
+.ico{width:34px;height:34px;border-radius:10px;background:var(--card-2);display:inline-grid;place-items:center;flex:none}
+.ach b{display:block;font-size:17px;font-weight:700;line-height:1.1}
+.ach small{display:block;font-size:13px;margin-top:1px}
+.ach small::before{content:"• "}
+.sc-row{display:flex;align-items:center;gap:7px;font-size:14px;margin:6px 0}
+.sc-row .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.sc-row .nm.cut{text-decoration:line-through;color:var(--t3)}
+.sc-row .tg{font:12px var(--mono);white-space:nowrap}
+.ring{display:flex;align-items:center;gap:12px}
+.ring svg{flex:none}
+.ring .who{min-width:0}
+.ring .who b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ring .who span{display:block;font-size:13px}
+.ex-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;min-width:0}
+.ex-row div{min-width:0}
+.ex-row b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ex-row span{font-size:13px;color:var(--t2)}
+.prog{position:relative;height:36px;border-radius:12px;background:#1d2a22;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#c9f5dc}
+.prog i{position:absolute;inset:0 auto 0 0;background:#255c3c;transition:width .8s}
+.prog span{position:relative;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
+.prog.done{background:#14301f;color:var(--green)}
+.prog.idle{background:var(--card-2);color:var(--t3)}
+.pills{display:flex;gap:6px;flex-wrap:wrap}
+.pill{font:12px var(--mono);border-radius:7px;padding:3px 7px;border:1px solid var(--line);color:var(--t2)}
+.pill.r{border-color:rgba(255,92,92,.45);color:#ff8a8a}
+.pill.g{border-color:rgba(52,208,127,.45);color:var(--green)}
+.dots{display:flex;justify-content:center;gap:6px;margin-top:10px}
+.dots i{width:6px;height:6px;border-radius:50%;background:#33363d}
+.dots i.on{background:var(--t1)}
+
+/* activity */
+.act{display:flex;align-items:center;gap:12px;padding:9px 0;min-height:58px;cursor:pointer}
+.av{position:relative;flex:none;display:inline-flex}
+.av .badge{position:absolute;right:-3px;bottom:-3px;width:17px;height:17px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:900;color:#fff;border:2px solid var(--bg)}
+.act .mid{flex:1;min-width:0}
+.act .mid b{display:block;font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act .mid span{display:block;font-size:14px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act .mid svg{vertical-align:-2px;margin-right:4px}
+.act .rt{text-align:right;flex:none}
+.act .rt b{display:block;font-size:17px;font-weight:700}
+.act .rt span{display:block;font-size:13px;color:var(--t2)}
+.empty{color:var(--t3);font-size:15px;padding:6px 0 10px}
+.coin{display:inline-grid;place-items:center;border-radius:50%;color:#fff;font-weight:800;overflow:hidden;flex:none}
+.coin img{width:100%;height:100%;object-fit:cover}
+
+/* tab bar */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(10,11,13,.94);border-top:1px solid var(--line);padding:6px 0 calc(var(--bottom) + 6px);display:flex;justify-content:center;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.tabbar .in{width:100%;max-width:560px;display:flex;justify-content:space-around}
+.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:64px;min-height:48px;justify-content:center;font-size:11.5px;color:var(--t3)}
+.tabbar a[aria-current="page"]{color:var(--t1)}
+.tabbar svg{width:26px;height:26px}
+
+/* coin page */
+.back{display:inline-flex;align-items:center;gap:4px;min-height:44px;color:var(--green);font-size:18px}
+.chead{display:flex;align-items:center;gap:12px;margin-top:4px}
+.chead b{display:block;font-size:21px}
+.chead span{font-size:15px;color:var(--t2)}
+.cbig{font:700 clamp(46px,13vw,58px)/1.05 var(--sans);letter-spacing:-.02em;margin-top:12px}
+.since{font-size:16px;margin-top:2px}
+.legend{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--t2);margin-top:6px}
+.legend b{color:var(--t1)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%}
+.cchart{position:relative;height:230px;margin:10px -18px 0}
+.cchart canvas{position:absolute;inset:0;width:100%;height:100%}
+.tagl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:12px;font-weight:600;border-radius:999px;padding:2px 9px;border:1px solid #2b4a8f;background:#0d1426;color:#dbe6ff}
+.tagl.g{border-color:#1f7a4a;background:#0b2016;color:var(--green)}
+.tagl.o{border-color:#8a5a1f;background:#24170a;color:#ffbd6b}
+.tagl.now{border:0;background:var(--green);color:#03140b;border-radius:6px;font-weight:800;transform:translate(-100%,-50%)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.stats span{display:block;font-size:14px;color:var(--t2)}
+.stats b{font-size:18px}
+.rules-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 10px;margin:22px 0 6px}
+.rules-h b{font-size:21px}
+.rules-h span{font-size:14px;color:var(--t2)}
+.rule{display:flex;gap:11px;padding:9px 0}
+.rule .tx{flex:1;min-width:0}
+.rule .tx b{font-size:17px}
+.rule .tx b small{font-weight:400;color:var(--t2);font-size:15px}
+.rule .tx span{display:block;font-size:15px;color:var(--t1);margin-top:1px}
+.rule .tx em{display:block;font:12px var(--mono);color:var(--t3);font-style:normal;margin-top:2px}
+.chip{flex:none;align-self:flex-start;font:12.5px var(--mono);border-radius:7px;padding:2px 8px;background:var(--card-2);color:var(--t2)}
+.chip.armed{background:var(--red-dim);color:#ff8a8a}
+.chip.done{background:var(--green-dim);color:var(--green)}
+.chip.blue{background:var(--blue-dim);color:#8fb4ff}
+.chip.off{background:transparent;color:var(--t3);border:1px solid var(--line)}
+.box{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:13px 14px;margin-top:12px}
+.box .mid{flex:1;min-width:0}
+.box .mid b{display:block;font-size:17px}
+.box .mid span{display:block;font-size:14px;color:var(--t2)}
+.box .rt{text-align:right}
+.box .rt b{display:block;font-size:20px}
+.box .rt span{display:block;font-size:14px}
+.links{margin-top:14px;border-top:1px solid var(--line)}
+.links a{display:flex;justify-content:space-between;align-items:center;min-height:50px;border-bottom:1px solid var(--line);font-size:16px}
+.links a span{color:var(--t3)}
+.note{font-size:13px;color:var(--t3);margin:12px 2px 0}
+
+/* account / agents tab */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-top:12px}
+.panel h3{margin:0 0 8px;font-size:18px}
+.kv{border-top:1px solid var(--line)}
+.kv div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.kv div span:first-child{color:var(--t2);flex:none}
+.kv div span:last-child{text-align:right}
+.btns{display:flex;gap:10px;margin-top:12px}
+.btn{flex:1;min-height:50px;border-radius:999px;background:var(--card-2);font-weight:700;font-size:16px}
+.btn.primary{background:var(--green);color:#03140b}
+.btn:disabled{opacity:.4}
+.rlist{margin:0;padding-left:18px;font-size:14.5px;color:var(--t2)}
+.rlist li{margin:6px 0}
+.cuts{font-size:13.5px;color:var(--t2);margin:8px 0 0}
+.cuts b{color:var(--t1);font-weight:600}
+.toggle{display:flex;align-items:center;justify-content:space-between;min-height:48px;font-size:15px;margin-top:8px}
+.toggle input{width:22px;height:22px;accent-color:var(--green)}
+.ev{display:grid;grid-template-columns:44px 84px minmax(0,1fr);gap:8px;font:12.5px/1.45 var(--mono);padding:4px 0;border-bottom:1px solid #15171b}
+.ev .rs{color:var(--t2);overflow-wrap:anywhere}
 
 /* sheets */
-.sheet-bg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
-.sheet{width:100%;max-width:560px;max-height:92vh;overflow:auto;background:var(--panel);border-radius:22px 22px 0 0;padding:16px 16px calc(var(--bottom) + 18px)}
-.sheet .grab{width:38px;height:5px;border-radius:3px;background:var(--t3);margin:0 auto 12px}
-.conn-icons{display:flex;justify-content:center;align-items:center;gap:10px}
-.conn-icons img{width:44px;height:44px;border-radius:12px}
-.conn-icons .dots{color:var(--t3);letter-spacing:3px}
-.sheet h2{text-align:center;margin:10px 0 2px;font:700 21px var(--display)}
-.kv{margin-top:14px;border-top:1px solid var(--line)}
-.kv div{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
-.kv div span:first-child{color:var(--t3);font-family:var(--mono);font-size:12px}
-.perm{list-style:none;padding:0;margin:12px 0 0;font-size:13px;color:var(--t2)}
-.perm li{margin:6px 0}
-.perm .y{color:var(--green)}.perm .n{color:var(--red)}
-.choice{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.choice button{min-height:38px;padding:0 12px;border-radius:10px;background:var(--panel-2);font:600 13px var(--mono)}
+.sheet-bg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.66);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:92vh;overflow:auto;background:#121317;border-radius:24px 24px 0 0;padding:14px 18px calc(var(--bottom) + 18px)}
+.grab{width:40px;height:5px;border-radius:3px;background:#3a3d44;margin:0 auto 14px}
+.conn-icons{display:flex;justify-content:center;align-items:center;gap:12px}
+.conn-icons img{width:48px;height:48px;border-radius:14px}
+.conn-icons .dots3{color:var(--t3);letter-spacing:4px}
+.vbadge{display:inline-grid;place-items:center;min-width:48px;height:48px;padding:0 8px;border-radius:14px;background:var(--card-2);border:1px solid var(--line);font:800 12.5px var(--mono);color:var(--green)}
+.sheet h2{text-align:center;margin:12px 0 2px;font-size:23px}
+.lbl{font:12px var(--mono);color:var(--t3);margin-top:14px}
+.choice{display:flex;flex-wrap:wrap;gap:7px;margin-top:7px}
+.choice button{min-height:42px;padding:0 13px;border-radius:12px;background:var(--card-2);font-weight:700;font-size:14px}
 .choice button[aria-pressed="true"]{background:var(--t1);color:#000}
-.lbl{font:11.5px var(--mono);color:var(--t3);margin-top:12px}
-.go{width:100%;min-height:52px;border-radius:999px;background:var(--green);color:#03140b;font-weight:800;font-size:16px;margin-top:16px}
+.perm{list-style:none;padding:0;margin:14px 0 0;font-size:14.5px;color:var(--t2)}
+.perm li{margin:7px 0}.perm .y{color:var(--green)}.perm .n{color:var(--red)}
+.go{width:100%;min-height:54px;border-radius:999px;background:var(--green);color:#03140b;font-weight:800;font-size:17px;margin-top:16px}
 .go.done{background:#1a6b40;color:#d9ffe9}
-.repos .rp{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:8px}
-.repos .rp .t{display:flex;justify-content:space-between;font:12px var(--mono)}
-.repos .rp .d{font-size:12px;color:var(--t3);margin:2px 0 6px}
-.role{display:inline-flex;align-items:center;gap:6px;font:700 11px var(--mono);border-radius:7px;padding:3px 8px}
-.recap .k{font:11.5px var(--mono);color:var(--t3);margin-top:12px}
-.recap .v1{font:700 30px var(--display)}
-.recap .v2{font:700 36px var(--display)}
+.recap .k{font-size:13px;color:var(--t3);margin-top:14px}
+.recap .v1{font:700 32px var(--sans)}
+.recap .v2{font:700 40px var(--sans)}
 .recap .row{display:flex;justify-content:space-between;align-items:center}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
-.tiles div{background:var(--panel-2);border-radius:10px;padding:7px 8px}
-.tiles span{display:block;font:10.5px var(--mono);color:var(--t3)}
-.tiles b{font-size:17px}
-.vbadge{display:inline-grid;place-items:center;min-width:44px;height:44px;padding:0 8px;border-radius:12px;background:var(--panel-2);border:1px solid var(--line);font:800 12px var(--mono);color:var(--green)}
-.vchip{font:700 11px var(--mono);color:var(--green);border:1px solid rgba(34,211,122,.35);border-radius:6px;padding:1px 6px}
-@media (max-width:420px){.vchip{display:none}}
-.foot{font-size:11.5px;margin:14px 2px 0;color:var(--t3)}
-.foot a{color:var(--t2);text-decoration:underline}
-.links a{display:flex;justify-content:space-between;align-items:center;min-height:48px;padding:0 4px;border-bottom:1px solid var(--line);font-size:15px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:14px}
+.tiles div{background:var(--card-2);border-radius:12px;padding:8px 9px}
+.tiles span{display:block;font-size:12px;color:var(--t3)}
+.tiles b{font-size:19px}
 
-/* toast */
-.toast{position:fixed;left:50%;top:calc(var(--top) + 8px);transform:translate(-50%,-140%);z-index:60;width:min(94vw,520px);background:rgba(30,32,38,.96);border:1px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;gap:10px;align-items:center;transition:transform .35s ease;box-shadow:0 10px 30px rgba(0,0,0,.4)}
-.toast.on{transform:translate(-50%,0)}
-.toast b{display:block;font-size:13.5px}
-.toast span{font-size:12px;color:var(--t2)}
+/* notification banner */
+.banner{position:fixed;left:50%;top:calc(var(--top) + 8px);transform:translate(-50%,-150%);z-index:60;width:min(94vw,520px);background:rgba(38,40,46,.97);border-radius:20px;padding:11px 13px;display:flex;gap:11px;align-items:center;transition:transform .4s cubic-bezier(.2,.8,.2,1);box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.banner.on{transform:translate(-50%,0)}
+.banner img.app{width:38px;height:38px;border-radius:10px;flex:none}
+.banner .tx{flex:1;min-width:0}
+.banner b{display:block;font-size:15px}
+.banner span{display:block;font-size:14px;color:#d4d6db}
+.confetti{position:fixed;inset:0;z-index:55;pointer-events:none}
 .lock{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;flex-direction:column;justify-content:center;gap:10px;padding:32px;text-align:center}
-.field{width:100%;min-height:50px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--t1);padding:0 14px;font-size:17px}
-.offline{margin:4px 14px 0;padding:8px 12px;border-radius:12px;background:var(--red-dim);color:var(--red);font-size:13px}
-@media (prefers-reduced-motion:reduce){.tick .run{animation:none}.tick{overflow-x:auto}.boot,.toast{transition:none}.live i{animation:none}.clone .bar i{transition:none}}
+.field{width:100%;min-height:52px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--t1);padding:0 14px;font-size:17px}
+.offline{margin:4px 18px 0;padding:9px 12px;border-radius:12px;background:var(--red-dim);color:var(--red);font-size:14px}
+@media (prefers-reduced-motion:reduce){.dg .col,.banner,.prog i{transition:none}.livepill i{animation:none}}
 </style>
 </head>
 <body>
-<div class="boot" id="boot" aria-hidden="true">
-  <img src="/icon-180.png" alt="">
-  <b>AI Desk Bot</b>
-  <span class="sub">terminal · modo memes</span>
-  <div class="clone" id="clone"></div>
-</div>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="banner" id="banner" role="status" aria-live="polite"></div>
+<canvas class="confetti" id="confetti" hidden></canvas>
 <div class="offline" id="offline" role="status" hidden></div>
 
 <main class="wrap" id="main" hidden>
-  <div class="top"><a class="back" href="/app" aria-label="Voltar às mesas">‹</a><img src="/icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip" id="mode-chip">modo memes</span><span class="vchip" id="venue-chip" hidden></span><span class="live" id="live"><i></i>Live</span></div>
-  <div class="tick" id="tick"></div>
-  <div class="cap" id="cap"></div>
-  <div class="balrow"><div class="bal" id="bal"></div><span class="delta" id="delta" hidden></span></div>
-  <div class="meta" id="meta"></div>
-  <div class="sub2" id="sub2"></div>
-  <div class="chart" id="chart"><canvas id="cv" role="img" aria-label="Saldo da sessão"></canvas></div>
-  <div class="legend" id="legend"></div>
-  <div class="box"><div class="log" id="trades"></div></div>
-  <div class="box"><div class="box-h"><b>agentes · a trabalhar juntos</b><span id="running"></span></div><div id="agents"></div></div>
-  <div class="box graph"><div class="box-h"><b>5 agentes → núcleo</b><span class="t3" id="agree"></span></div><div id="graph"></div></div>
-  <div class="btns"><button class="btn" id="b-new">Nova sessão</button><button class="btn" id="b-stop">Parar sessão</button></div>
-  <p class="foot" id="foot"></p>
+  <header class="hdr">
+    <a class="brand" href="/app" aria-label="Voltar às mesas"><img src="/icon-180.png" alt=""><b>AI Desk Bot</b><span aria-hidden="true">›</span></a>
+    <button class="livepill off" id="livepill" type="button"><i></i><span>Parada</span></button>
+  </header>
+
+  <section id="v-home">
+    <div class="conn" id="conn"></div>
+    <div class="bal" id="bal"></div>
+    <div class="chg" id="chg"></div>
+    <div class="chart" id="chart"><canvas id="cv" role="img" aria-label="Saldo da sessão"></canvas><div class="marks" id="marks"></div></div>
+    <div class="ranges" id="ranges" role="group" aria-label="Período do gráfico"></div>
+    <div class="sh"><h2>Agentes</h2><span id="running"></span></div>
+    <div class="cards" id="cards"></div>
+    <div class="dots" id="cdots" aria-hidden="true"></div>
+    <div class="sh"><h2>Atividade</h2><a href="#/atividade">Ver tudo</a></div>
+    <div id="act-home"></div>
+  </section>
+
+  <section id="v-agents" hidden>
+    <div class="sh" style="margin-top:6px"><h2>Agentes</h2><span id="running2"></span></div>
+    <div id="agents-full"></div>
+  </section>
+
+  <section id="v-activity" hidden>
+    <div class="sh" style="margin-top:6px"><h2>Atividade</h2><span id="act-count"></span></div>
+    <div id="act-full"></div>
+    <label class="toggle"><span>Mostrar tudo o que os agentes fizeram</span><input type="checkbox" id="all-ev"></label>
+    <div id="ev-full"></div>
+  </section>
+
+  <section id="v-account" hidden>
+    <div class="sh" style="margin-top:6px"><h2>Conta</h2><span id="acc-state"></span></div>
+    <div class="panel"><h3>Sessão</h3><div class="kv" id="acc-kv"></div>
+      <div class="btns"><button class="btn primary" id="b-new" type="button">Nova sessão</button><button class="btn" id="b-stop" type="button">Parar</button></div>
+      <div class="btns"><button class="btn" id="b-recap" type="button">Resumo da última sessão</button></div>
+    </div>
+    <div class="panel"><h3>Regras</h3><ul class="rlist" id="acc-rules"></ul></div>
+    <div class="panel"><h3>Dados</h3><div class="kv" id="acc-feeds"></div></div>
+    <div class="links" id="acc-links"></div>
+    <p class="note">Tudo em papel: nenhuma carteira, nenhuma ordem real. Comprar ou vender nas apps é dinheiro real e decisão tua; esta mesa nunca o faz por ti.</p>
+  </section>
+
+  <section id="v-coin" hidden></section>
 </main>
+
+<nav class="tabbar" id="tabbar" aria-label="Secções" hidden><div class="in">
+  <a href="#/" data-v="home"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.2 2.8 11h2.7v9.3h5V14h3v6.3h5V11h2.7z"/></svg>Início</a>
+  <a href="#/agentes" data-v="agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="8" r="3.3"/><circle cx="16.5" cy="8" r="3.3"/><path d="M2.5 19.5c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5M11 19.5c.6-3.3 2.8-5 5.5-5s4.9 1.7 5.5 5"/></svg>Agentes</a>
+  <a href="#/atividade" data-v="activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4l3-7 5 14 3-7h5"/></svg>Atividade</a>
+  <a href="#/conta" data-v="account"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20.5c.9-4 4-6 8-6s7.1 2 8 6"/></svg>Conta</a>
+</div></nav>
 
 <div class="sheet-bg" id="sheet" hidden><div class="sheet" role="dialog" aria-modal="true" id="sheet-in"></div></div>
 
 <div class="lock" id="lock" hidden>
   <img src="/icon-180.png" alt="" style="width:72px;height:72px;border-radius:18px;margin:0 auto">
-  <h1 style="font:700 24px var(--display);margin:0">AI Desk Bot</h1>
+  <h1 style="font:700 24px var(--sans);margin:0">AI Desk Bot</h1>
   <form id="login" hidden style="max-width:340px;margin:8px auto 0;text-align:left;width:100%">
     <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
     <input class="field" id="pw" type="password" autocomplete="current-password" required minlength="6" placeholder="Password">
@@ -198,33 +312,30 @@ a{color:inherit;text-decoration:none}
 <script>
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const NF = {};
 const nf = (d = 2) => NF[d] || (NF[d] = (() => { try { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: "always"}); } catch (e) { return new Intl.NumberFormat("pt-PT", {minimumFractionDigits: d, maximumFractionDigits: d}); } })());
-const eur = v => v == null ? "—" : nf(2).format(v) + " €";
-const seur = v => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(2).format(Math.abs(v)) + " €";
-const pct = (v, d = 1) => v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(d).format(Math.abs(v * 100)) + "%";
+const eur = v => v == null || !isFinite(v) ? "—" : nf(2).format(v) + " €";
+const seur = v => v == null || !isFinite(v) ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(2).format(Math.abs(v)) + " €";
+const pct = (v, d = 1) => v == null || !isFinite(v) ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf(d).format(Math.abs(v * 100)) + "%";
+const xm = v => v == null ? "" : "x" + nf(2).format(v);
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
 const hhmm = iso => iso ? new Date(iso).toLocaleTimeString("pt-PT", {hour: "2-digit", minute: "2-digit"}) : "—";
+const usdK = v => { if (!v || !isFinite(v)) return "—"; const a = Math.abs(v); return "$" + (a >= 1e9 ? nf(2).format(v / 1e9) + "B" : a >= 1e6 ? nf(2).format(v / 1e6) + "M" : a >= 1e3 ? nf(1).format(v / 1e3) + "K" : nf(0).format(v)); };
+const usdP = v => { if (v == null || !isFinite(v) || v === 0) return "—"; const a = Math.abs(v); const d = a >= 1000 ? 0 : a >= 1 ? 2 : a >= 0.01 ? 4 : Math.min(10, 2 + Math.ceil(-Math.log10(a)) + 1); return "$" + nf(d).format(v); };
+const age = iso => { if (!iso) return ""; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)} dias`; };
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
-function bigMoney(v) { const s = eur(v), i = s.lastIndexOf(","); return i < 0 ? esc(s) : `${esc(s.slice(0, i))}<span class="c">${esc(s.slice(i))}</span>`; }
 
-/* ---------------------------------------------------------------- memes or futures: same terminal */
+/* ---------------------------------------------------------------- memes or futures: the same app */
 const KIND = /perps/.test(location.pathname) ? "perps" : "memes";
 const MODE = KIND === "perps" ? "futuros" : "memes";
+const PERPS = KIND === "perps";
 const VENUE_NAME = {gmgn: "GMGN", fomo: "FOMO", invo: "INVO"};
-const K = {
-  memes: {chip: "modo memes", api: "/api/desk/memes", unit: "moedas", what: "memecoins",
-          stars: {"GMGNAI/gmgn-skills": 685, "8bitsats/Solana-MCP-Trading-Server": 14, "TauricResearch/TradingAgents": 121491, "sendaifun/solana-agent-kit": 1748, "0xsyncroot/opentrade": 9},
-          src: {SMARTS: "gmgn-skills", TRENDS: "MCP-Trading", DEBATE: "TradingAgents", ROUTER: "agent-kit", EXEC: "opentrade"}},
-  perps: {chip: "modo futuros", api: "/api/desk/perps", unit: "pares", what: "futuros",
-          stars: {"hyperliquid-dex/hyperliquid-python-sdk": 1879, "freqtrade/freqtrade": 56687, "TauricResearch/TradingAgents": 121510, "ccxt/ccxt": 44834, "nautechsystems/nautilus_trader": 31400},
-          src: {SMARTS: "hl-sdk", TRENDS: "freqtrade", DEBATE: "TradingAgents", ROUTER: "ccxt", EXEC: "nautilus"}},
-}[KIND];
+const K = PERPS ? {chip: "modo futuros", api: "/api/desk/perps", unit: "pares", what: "futuros"}
+                : {chip: "modo memes", api: "/api/desk/memes", unit: "moedas", what: "memecoins"};
 document.title = "AI Desk Bot · " + K.chip;
-$("#mode-chip").textContent = K.chip;
-$("#boot .sub").textContent = "terminal · " + K.chip;
 
 /* ---------------------------------------------------------------- auth (same as the other pages) */
 (function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
@@ -257,239 +368,523 @@ $("#login").addEventListener("submit", async e => {
 
 /* ---------------------------------------------------------------- agents: colours and faces */
 const AG = {
-  SMARTS: {c: "var(--smarts)", hex: "#22d37a", s: "M20 3l14 8v16l-14 8-14-8V11z"},
-  TRENDS: {c: "var(--trends)", hex: "#4cc3ff", s: "M20 4a16 16 0 1 1 0 32 16 16 0 0 1 0-32z"},
-  DEBATE: {c: "var(--debate)", hex: "#a98bff", s: "M10 5h20a5 5 0 0 1 5 5v20a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V10a5 5 0 0 1 5-5z"},
-  ROUTER: {c: "var(--router)", hex: "#ffb020", s: "M20 4c1.4 0 2.6.8 3.3 2l12 21c1.5 2.6-.4 6-3.4 6H8.1c-3 0-4.9-3.4-3.4-6l12-21c.7-1.2 1.9-2 3.3-2z"},
-  EXEC: {c: "var(--exec)", hex: "#ff5fa8", s: "M20 3l4.2 7.6 8.4-1.8-3.4 7.9 6 6.1-8.5 1.2-.7 8.6L20 26.8l-6 4.8-.7-8.6-8.5-1.2 6-6.1-3.4-7.9 8.4 1.8z"},
+  SCANNER: {name: "Scanner", hex: "#2dd4bf", s: "M20 2l3.2 5.6 6.3-1.3-1.2 6.4 5.6 3.3-5.6 3.3 1.2 6.4-6.3-1.3L20 30l-3.2-5.6-6.3 1.3 1.2-6.4L6.1 16l5.6-3.3-1.2-6.4 6.3 1.3z"},
+  ANALYST: {name: "Analista", hex: "#ff4d5e", s: "M20 4c1.4 0 2.6.8 3.3 2l12 21c1.5 2.6-.4 6-3.4 6H8.1c-3 0-4.9-3.4-3.4-6l12-21c.7-1.2 1.9-2 3.3-2z"},
+  COMPOUNDER: {name: "Compounder", hex: "#ffb020", s: "M20 4a16 16 0 1 1 0 32 16 16 0 0 1 0-32z"},
+  EXECUTOR: {name: "Executor", hex: "#a98bff", s: "M12 6c4-3 12-3 16 0s7 8 6 14-3 13-8 14-12 1-16-1-7-8-6-14 4-10 8-13z"},
+  RISK: {name: "Risco", hex: "#ff8a3d", s: "M20 3l14 8v16l-14 8-14-8V11z"},
 };
-const ORDER = ["SMARTS", "TRENDS", "DEBATE", "ROUTER", "EXEC"];
+const ORDER = ["SCANNER", "ANALYST", "COMPOUNDER", "EXECUTOR", "RISK"];
+const OLD = {TRENDS: "SCANNER", SMARTS: "SCANNER", DEBATE: "ANALYST", ROUTER: "ANALYST", CORE: "ANALYST", EXEC: "EXECUTOR"};
 function face(a, size = 22) {
-  const x = AG[a] || AG.TRENDS;
-  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><path d="${x.s}" fill="${x.hex}"/><ellipse cx="15.5" cy="20" rx="3.2" ry="4" fill="#fff"/><ellipse cx="24.5" cy="20" rx="3.2" ry="4" fill="#fff"/><circle cx="16.2" cy="21" r="1.7" fill="#000"/><circle cx="25.2" cy="21" r="1.7" fill="#000"/></svg>`;
+  const x = AG[a] || AG.SCANNER;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><path d="${x.s}" fill="${x.hex}"/><ellipse cx="15.5" cy="19" rx="3" ry="3.8" fill="#fff"/><ellipse cx="24.5" cy="19" rx="3" ry="3.8" fill="#fff"/><circle cx="16.1" cy="20" r="1.6" fill="#000"/><circle cx="25.1" cy="20" r="1.6" fill="#000"/></svg>`;
 }
-const COLORS = ["#f7931a", "#4cc3ff", "#22d37a", "#ffb020", "#a98bff", "#ff5fa8", "#64748b", "#e11d48", "#14b8a6"];
+const ico = (a, size = 34) => `<span class="ico" style="width:${size}px;height:${size}px">${face(a, Math.round(size * .72))}</span>`;
+const COLORS = ["#f7931a", "#4cc3ff", "#22d37a", "#ffb020", "#a98bff", "#ff5fa8", "#64748b", "#e11d48", "#14b8a6", "#2563eb"];
 const coinColor = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
-
-/* ---------------------------------------------------------------- boot: git clone · 5 repos */
-const STARS = K.stars;
-const short = n => n >= 1000 ? nf(n >= 10000 ? 0 : 1).format(n / 1000) + "k" : String(n);
-function boot(done) {
-  const repos = Object.keys(STARS);
-  $("#clone").innerHTML = `<div class="h">$ git clone · ${repos.length} repos</div>${repos.map((r, i) => `<div class="r" style="opacity:0" data-i="${i}"><span>${esc(r)}</span><span>★ ${short(STARS[r])}</span></div>`).join("")}<div class="bar"><i></i></div>`;
-  const rows = [...document.querySelectorAll("#clone .r")];
-  if (REDUCED) { rows.forEach(r => r.style.opacity = 1); setTimeout(finish, 300); }
-  else { rows.forEach((r, i) => setTimeout(() => { r.style.transition = "opacity .25s"; r.style.opacity = 1; }, 250 + i * 260)); requestAnimationFrame(() => $("#clone .bar i").style.width = "100%"); setTimeout(finish, 1900); }
-  function finish() { $("#boot").classList.add("out"); setTimeout(() => { $("#boot").hidden = true; done(); }, REDUCED ? 0 : 350); }
+function coinAv(sym, img, size = 40) {
+  const s = String(sym || "?").replace(/^\$/, "");
+  const letters = esc(s.slice(0, s.length > 3 ? 2 : 3).toUpperCase());
+  const pic = img && /^https:\/\//.test(img) ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : "";
+  return `<span class="coin" style="width:${size}px;height:${size}px;background:${coinColor(s)};font-size:${Math.round(size * .34)}px">${pic || letters}</span>`;
 }
 
 /* ---------------------------------------------------------------- data */
-const S = {d: null, lastEv: null, timer: null, minutes: 720, eur: 110, connected: false, lev: 5,
-           venue: KIND === "perps" ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn")};
+const S = {d: null, lastEv: null, minutes: 720, eur: 110, lev: 5, range: "LIVE", allEv: false, view: "home", celebInit: false,
+           venue: PERPS ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn")};
+const normEvents = log => (log || []).map(e => Object.assign({}, e, {agent: e.verdict === "sell" ? "RISK" : (OLD[e.agent] || e.agent)}));
 async function load() {
   let d;
   try { d = await api(K.api); $("#offline").hidden = true; }
   catch (e) { if (!e.locked) { $("#offline").hidden = false; $("#offline").textContent = e.offline ? "Sem ligação ao bot · a tentar outra vez" : "Erro: " + e.message; } return; }
+  d.log = normEvents(d.log);
   const first = !S.d;
   S.d = d;
-  render(d);
+  render();
   if (first) {
     S.lastEv = (d.log || [])[0]?.ts || null;
     if (!d.running && (!d.recap || d.mode !== MODE)) openConnect();
-    else if (!d.running && d.recap && d.mode === MODE) openRecap();
-  } else toasts(d);
+    else if (!d.running && d.recap && d.mode === MODE && S.view === "home") openRecap();
+  } else notify(d);
+  celebrate(d);
+  S.celebInit = true;
 }
 
-/* ---------------------------------------------------------------- render */
-function render(d) {
-  $("#main").hidden = false;
-  const running = d.running;
-  $("#live").className = "live" + (running ? "" : " off"); $("#live").innerHTML = `<i></i>${running ? "Live" : "parada"}`;
-  const venue = VENUE_NAME[d.venue || S.venue] || "GMGN";
-  $("#venue-chip").hidden = false; $("#venue-chip").textContent = venue;
-  const tk = (d.ticker || []).map(t => `<span><i style="background:${coinColor(t.symbol)}" aria-hidden="true"></i>${esc(t.symbol)} <span class="${cls(t.pct)}">${esc(pct(t.pct, KIND === "perps" ? 1 : 0))}</span> <span class="t3">${KIND === "perps" ? "perp" : "dex"}</span></span>`).join("");
-  $("#tick").innerHTML = `<div class="run">${tk ? tk + tk : `<span class="t3">à espera dos primeiros ${K.unit === "pares" ? "pares" : "tokens"}</span>`}</div>`;
-  const mins = d.started ? Math.max(0, Math.round(((running ? Date.now() : new Date(d.ends)) - new Date(d.started)) / 60000)) : 0;
-  $("#cap").textContent = `a negociar via ${venue} em papel · 5 repos · 5 agentes · ${KIND === "perps" ? (d.lev || S.lev) + "x · " : ""}${Math.floor(mins / 60)}h ${mins % 60}m${running ? "" : " (terminada)"}`;
-  const eq = d.equity_eur, start = d.start_eur, diff = eq - start;
-  $("#bal").innerHTML = bigMoney(eq);
-  const pts = (d.curve || []).filter(p => p[1] != null);
-  const recent = pts.length > 12 ? eq - pts[pts.length - 13][1] : null;
-  $("#delta").hidden = recent == null || Math.abs(recent) < 0.01;
-  if (recent != null) { $("#delta").textContent = seur(recent).replace(" €", "€"); $("#delta").className = "delta" + (recent < 0 ? " neg" : ""); }
-  const trades = d.trades || [];
-  $("#meta").innerHTML = `<span>pôs ${esc(eur(start))}</span><span>·</span><span>${trades.length} trades</span><span class="pill">${nf(2).format(eq / (start || 1))}×</span>`;
-  $("#sub2").innerHTML = `<span class="${cls(diff)}">${esc(seur(diff))} · ${d.wins || 0}W ${d.losses || 0}L</span><span class="t3">${esc(hhmm(new Date().toISOString()))}</span>`;
-  drawChart(d, pts);
-  // trade log: the last buys and sells
-  const tl = (d.log || []).filter(e => e.verdict === "buy" || e.verdict === "sell").slice(0, 3);
-  $("#trades").innerHTML = tl.length ? tl.map(e => {
-    const parts = (e.reason || "").replace(/^comprou /, "").split(" · ");
-    const val = e.pnl_eur != null ? `<span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span>` : esc(KIND === "perps" ? (parts[1] || "").replace("margem ", "") : parts[0]);
-    const tag = e.verdict === "buy" ? (KIND === "perps" ? String(e.side || "long").toUpperCase() : "BUY") : (KIND === "perps" ? "CLOSE" : "SELL");
-    return `<div data-mint="${esc(e.mint || "")}" data-coin="${esc(e.coin)}" role="button" tabindex="0"><span class="tm">${esc(hhmm(e.ts))}</span><span class="tg ${e.verdict}">${tag}</span><span class="co"><i style="background:${coinColor(e.coin)}"></i>${esc(e.coin)}</span><span class="vl">${val} <span class="t3">papel</span></span></div>`;
-  }).join("") : `<div><span class="tm">—</span><span class="tg t3">…</span><span class="co t3">ainda sem trades nesta sessão</span><span></span></div>`;
-  // agents working together
-  const ags = d.agents || {};
-  const runningN = running ? ORDER.length : 0;
-  $("#running").innerHTML = running ? `● ${runningN} a correr` : `<span class="t3">parados</span>`;
-  const src = K.src;
-  $("#agents").innerHTML = ORDER.map(a => {
-    const x = ags[a] || {}, ok = x.ok;
-    const coin = x.coin ? `<span style="display:inline-flex;align-items:center;gap:4px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${coinColor(x.coin)}"></i><b>${esc(x.coin)}</b></span> · ` : "";
-    return `<div class="ag">${face(a)}<span class="nm" style="color:${AG[a].c}">${a}</span><span class="rd ${ok === false ? "" : ""}">${coin}<span class="${ok === false ? "no" : ""}">${esc(x.text || "à espera")}</span></span><span class="src">${src[a]}</span></div>`;
-  }).join("");
-  // graph: 5 agents → core
-  const lastCore = (d.log || []).find(e => e.agent === "CORE");
-  $("#agree").textContent = lastCore ? `${hhmm(lastCore.ts)} · ${lastCore.coin} · 5/5` : "à espera de 5/5";
-  $("#graph").innerHTML = graph(ags, running);
-  $("#b-stop").disabled = !running; $("#b-new").disabled = running;
-  const feeds = Object.values(d.feeds || {}).map(f => f.text).filter(Boolean).join(" · ");
-  $("#foot").innerHTML = KIND === "perps"
-    ? `Papel: nenhuma ordem real. Preços, livro de ordens, funding e top traders da Hyperliquid, a exchange onde a INVO negoceia. A INVO não tem API pública: cada par abre na INVO ou na Hyperliquid.${feeds ? "<br>" + esc(feeds) : ""}<br><a href="/app#/futuros">Mesa contínua de futuros (velas de 4 h, com backtest) ›</a>`
-    : `Papel: nenhuma carteira, nenhuma ordem real. Dados da GMGN (com a tua chave), GeckoTerminal, DexScreener, Jupiter e da rede Solana. Cada moeda abre na GMGN ou na FOMO.${feeds ? "<br>" + esc(feeds) : ""}`;
-  document.querySelectorAll("#trades [data-coin]").forEach(r => r.onclick = () => coinSheet(r.dataset.coin, r.dataset.mint));
+/* ---------------------------------------------------------------- routing: tabs and the coin page */
+function route() {
+  const h = location.hash || "#/";
+  const coin = h.match(/^#\/moeda\/(.+)$/);
+  const view = coin ? "coin" : h === "#/agentes" ? "agents" : h === "#/atividade" ? "activity" : h === "#/conta" ? "account" : "home";
+  for (const v of ["home", "agents", "activity", "account", "coin"]) $("#v-" + v).hidden = v !== view;
+  $$(".tabbar a").forEach(a => a.setAttribute("aria-current", a.dataset.v === (view === "coin" ? "home" : view) ? "page" : "false"));
+  S.view = view; S.coinKey = coin ? decodeURIComponent(coin[1]) : null;
+  if (S.d) render();
+  window.scrollTo(0, 0);
 }
-function graph(ags, running) {
-  const W = 340, H = 150, xs = ORDER.map((_, i) => 34 + i * 68), cy = 118;
-  let g = "";
-  ORDER.forEach((a, i) => {
-    const on = running && ags[a] && ags[a].ok !== false;
-    g += `<path d="M${xs[i]} 46 C ${xs[i]} 85, ${W / 2} 80, ${W / 2} ${cy - 18}" fill="none" stroke="${AG[a].hex}" stroke-opacity="${on ? .9 : .25}" stroke-width="1.6" stroke-dasharray="${on ? "0" : "3 4"}"/>`;
-    g += `<g transform="translate(${xs[i] - 14},10)">${face(a, 28).replace("<svg ", "<svg x='0' y='0' ")}</g><text x="${xs[i]}" y="52" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#a2a6b2">${a}</text>`;
-  });
-  g += `<circle cx="${W / 2}" cy="${cy}" r="19" fill="#0b0c0f" stroke="#22d37a" stroke-width="2"/><image href="/icon-180.png" x="${W / 2 - 12}" y="${cy - 12}" width="24" height="24"/><text x="${W / 2}" y="${cy + 31}" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8.5" fill="#a2a6b2">NÚCLEO</text>`;
-  g += `<path d="M${W / 2 + 21} ${cy} L ${W / 2 + 50} ${cy}" stroke="#22d37a" stroke-width="1.6"/><text x="${W / 2 + 56}" y="${cy + 3}" font-family="ui-monospace,monospace" font-size="9" fill="#22d37a" font-weight="700">EXECUTA</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Os 5 agentes ligados ao núcleo que executa">${g}</svg>`;
+addEventListener("hashchange", route);
+
+function render() {
+  const d = S.d; if (!d) return;
+  $("#main").hidden = false; $("#tabbar").hidden = false;
+  $("#livepill").className = "livepill" + (d.running ? "" : " off");
+  $("#livepill span").textContent = d.running ? "Live" : "Parada";
+  ({home: renderHome, agents: renderAgents, activity: renderActivity, account: renderAccount, coin: renderCoin})[S.view](d);
 }
-function drawChart(d, pts) {
+const venueName = d => VENUE_NAME[d.venue || S.venue] || "GMGN";
+
+/* rolling digits, like a counter */
+function roll(el, text) {
+  if (REDUCED || el.dataset.t === undefined || el.dataset.t.length !== text.length) {
+    el.innerHTML = [...text].map(ch => /\d/.test(ch) ? `<span class="dg"><span class="col" style="transform:translateY(-${+ch * 10}%)">${"0123456789".split("").map(n => `<span>${n}</span>`).join("")}</span></span>` : `<span>${esc(ch)}</span>`).join("");
+  } else {
+    const cols = $$(".col", el); let i = 0;
+    for (const ch of text) if (/\d/.test(ch)) cols[i++].style.transform = `translateY(-${+ch * 10}%)`;
+  }
+  el.dataset.t = text; el.setAttribute("aria-label", text);
+}
+
+function renderHome(d) {
+  const open = (d.positions || []).length;
+  const gm = !PERPS && d.gmgn_key ? " · dados GMGN" : "";
+  $("#conn").innerHTML = `<b>${esc(venueName(d))}</b><span>ligada${esc(gm)} · Compounder 40% · ${open} ${open === 1 ? "aberta" : "abertas"}</span>${d.running ? '<i class="dot"></i>' : ""}`;
+  const eq = d.equity_eur ?? 0, start = d.start_eur || 1, diff = eq - start, mult = eq / start;
+  $("#bal").className = "bal" + (diff > 0.005 ? " upc" : "");
+  roll($("#bal"), nf(2).format(eq) + " €");
+  $("#chg").innerHTML = `<span class="${diff < 0 ? "down" : "up"}">${diff < 0 ? "▼" : "▲"} ${esc(nf(2).format(Math.abs(diff)))} € (${esc(nf(2).format(Math.abs(diff / start * 100)))}%)</span><span class="mult${diff < 0 ? " neg" : ""}">${esc(nf(2).format(mult))}×</span>`;
+  renderRanges(); drawCurve(d);
+  $("#running").textContent = d.running ? `${ORDER.length} a correr` : "parados";
+  const box = $("#cards"), keep = box.scrollLeft;
+  box.innerHTML = ORDER.map(a => agentCard(a, d)).join("");
+  box.scrollLeft = keep;
+  dots();
+  const rows = activityRows(d).slice(0, 6);
+  $("#act-home").innerHTML = rows.length ? rows.join("") : `<div class="empty">Ainda sem trades nesta sessão</div>`;
+  bindRows($("#act-home"));
+}
+
+/* ---------------------------------------------------------------- balance chart with trade bubbles */
+const RANGES = [["LIVE", 30 * 60e3], ["1H", 3600e3], ["4H", 4 * 3600e3], ["1D", 86400e3], ["1W", 7 * 86400e3], ["ALL", 0]];
+function renderRanges() {
+  if (!$("#ranges").children.length) {   // built once, so a tap is never lost to the 5 s refresh
+    $("#ranges").innerHTML = RANGES.map(([k]) => `<button type="button" data-r="${k}">${k === "ALL" ? "TUDO" : k}</button>`).join("");
+    $$("#ranges button").forEach(b => b.onclick = () => { S.range = b.dataset.r; renderRanges(); drawCurve(S.d); });
+  }
+  $$("#ranges button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.r === S.range)));
+}
+function curvePts(d) {
+  let pts = (d.curve || []).filter(p => p[1] != null);
+  const win = (RANGES.find(r => r[0] === S.range) || [0, 0])[1];
+  if (win && pts.length) { const cut = Date.now() - win; const f = pts.filter(p => p[0] >= cut); pts = f.length >= 2 ? f : pts.slice(-2); }
+  return pts;
+}
+function drawCurve(d) {
   const box = $("#chart"), cv = $("#cv"), W = box.clientWidth, H = box.clientHeight, dpr = devicePixelRatio || 1;
+  if (!W) return;
   cv.width = W * dpr; cv.height = H * dpr;
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const start = d.start_eur;
-  if (pts.length < 2) { g.strokeStyle = "#2a2d36"; g.setLineDash([3, 5]); g.beginPath(); g.moveTo(14, H * .7); g.lineTo(W - 14, H * .7); g.stroke(); $("#legend").innerHTML = ""; return; }
+  const pts = curvePts(d), start = d.start_eur;
+  $("#marks").innerHTML = "";
+  if (pts.length < 2) { g.strokeStyle = "#34d07f"; g.lineWidth = 2; g.beginPath(); g.moveTo(0, H * .7); g.lineTo(W - 22, H * .7); g.stroke(); g.fillStyle = "#34d07f"; g.beginPath(); g.arc(W - 22, H * .7, 5, 0, 7); g.fill(); return; }
   const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
-  let lo = Math.min(start, ...pts.map(p => p[1])), hi = Math.max(start, ...pts.map(p => p[1]));
-  if (hi - lo < start * .002) { lo -= start * .001; hi += start * .001; }
-  const X = t => 14 + (t - x0) / ((x1 - x0) || 1) * (W - 28), Y = v => 10 + (hi - v) / (hi - lo) * (H - 18);
-  const up = pts[pts.length - 1][1] >= start, col = up ? "#22d37a" : "#ff5b5b";
-  g.strokeStyle = "#2a2d36"; g.setLineDash([3, 5]); g.beginPath(); g.moveTo(14, Y(start)); g.lineTo(W - 14, Y(start)); g.stroke(); g.setLineDash([]);
-  const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, up ? "rgba(34,211,122,.30)" : "rgba(255,91,91,.22)"); grad.addColorStop(1, "rgba(11,12,15,0)");
-  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = grad; g.fill();
-  g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.strokeStyle = col; g.lineWidth = 2; g.stroke();
-  const lp = pts[pts.length - 1]; g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 4.5, 0, Math.PI * 2); g.fillStyle = "#0b0c0f"; g.fill(); g.strokeStyle = "#f4f5f7"; g.lineWidth = 2; g.stroke();
-  $("#legend").innerHTML = `<span>${esc(hhmm(new Date(x0).toISOString()))}</span><span>— valor · - - pôs</span><span>${esc(d.running ? hhmm(d.ends) : hhmm(new Date(x1).toISOString()))}</span>`;
+  let lo = Math.min(...pts.map(p => p[1])), hi = Math.max(...pts.map(p => p[1]));
+  if (hi - lo < start * .004) { lo -= start * .002; hi += start * .002; }
+  const top = 70, bot = 12;
+  const X = t => 4 + (t - x0) / ((x1 - x0) || 1) * (W - 28), Y = v => top + (hi - v) / (hi - lo) * (H - top - bot);
+  const up = pts[pts.length - 1][1] >= start, col = up ? "#34d07f" : "#ff5c5c";
+  const grad = g.createLinearGradient(0, top, 0, H); grad.addColorStop(0, up ? "rgba(52,208,127,.28)" : "rgba(255,92,92,.22)"); grad.addColorStop(1, "rgba(0,0,0,0)");
+  const path = () => { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); };
+  path(); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = grad; g.fill();
+  path(); g.strokeStyle = col; g.lineWidth = 2.2; g.lineJoin = "round"; g.stroke();
+  const lp = pts[pts.length - 1];
+  g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 8, 0, 7); g.fillStyle = up ? "rgba(52,208,127,.25)" : "rgba(255,92,92,.25)"; g.fill();
+  g.beginPath(); g.arc(X(lp[0]), Y(lp[1]), 4.5, 0, 7); g.fillStyle = col; g.fill();
+  // bubbles: the latest buys and sells inside this window, stacked so they do not overlap
+  const near = t => pts.reduce((b, p) => Math.abs(p[0] - t) < Math.abs(b[0] - t) ? p : b, pts[0]);
+  const evs = (d.log || []).filter(e => e.verdict === "buy" || e.verdict === "sell").map(e => ({e, t: new Date(e.ts).getTime()}))
+    .filter(o => o.t >= x0 - 6e4 && o.t <= x1 + 6e4).slice(0, 6);   // newest first: they get the free spots
+  const used = []; let html = "";
+  for (const {e, t} of evs) {
+    const p = near(t), px = X(p[0]), py = Y(p[1]);
+    g.beginPath(); g.arc(px, py, 3.6, 0, 7); g.fillStyle = e.verdict === "buy" ? "#4c8dff" : (e.pnl_eur >= 0 ? "#34d07f" : "#ff5c5c"); g.fill();
+    const x = Math.max(62, Math.min(W - 62, px));
+    let row = 0; while (used.some(u => u.row === row && Math.abs(u.x - x) < 140)) row++;
+    if (row > 1) continue;
+    used.push({x, row});
+    const by = Math.max(24, Math.min(py - 10, top) - row * 28);
+    const label = e.verdict === "buy" ? `${PERPS ? (e.side === "short" ? "Short " : "Long ") : "Comprou "}${esc(e.coin)}`
+      : e.kind === "half" ? `Metade ${esc(e.coin)}` : esc(e.pnl_eur >= 0 ? seur(e.pnl_eur) : pct(e.pct, 0));
+    html += `<span class="bub${e.verdict === "buy" ? "" : e.pnl_eur >= 0 ? " win" : " loss"}" style="left:${x}px;top:${by}px">${coinAv(e.coin, e.img, 18)}${label}</span>`;
+  }
+  $("#marks").innerHTML = html;
 }
-new ResizeObserver(() => { if (S.d) drawChart(S.d, (S.d.curve || []).filter(p => p[1] != null)); }).observe($("#chart"));
+addEventListener("resize", () => { if (!S.d) return; if (S.view === "home") drawCurve(S.d); if (S.view === "coin" && S.coinDraw) drawCoin(...S.coinDraw); });
 
-/* ---------------------------------------------------------------- toasts for new trades and 5/5 decisions */
-let toastTimer = null;
-function toast(html) {
-  const t = $("#toast"); t.innerHTML = html; t.classList.add("on");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 4500);
+/* ---------------------------------------------------------------- the five agent cards */
+const lastOf = (d, agent, pred = () => true) => (d.log || []).find(e => e.agent === agent && pred(e));
+function shortReason(r) {
+  const s = String(r || ""); let m;
+  if ((m = s.match(/^liquidez: \$?([\d.,]+k?)/i))) return "liq $" + m[1];
+  if ((m = s.match(/^já correu: \+?([\d.,]+%?(?: ATR)?)/))) return "já " + m[1];
+  if (/baleias a vender/.test(s)) return "baleias vendem";
+  if ((m = s.match(/poucas baleias: (\d+)/))) return m[1] + (m[1] === "1" ? " baleia" : " baleias");
+  if (/sem tendência/.test(s)) return "sem tendência";
+  if (/do outro lado/.test(s)) return "tops contra";
+  if (/poucos top traders/.test(s)) return "poucos tops";
+  if (/nenhum top trader/.test(s)) return "sem tops";
+  if (/^parado/.test(s)) return "parado";
+  return s.split(/[:·(]/)[0].trim().slice(0, 16);
 }
-function toasts(d) {
+function ringSvg(frac, color, label, size = 66) {
+  const r = size / 2 - 5, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac || 0));
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="#25282e" stroke-width="5"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/><text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle" font-family="-apple-system,system-ui,sans-serif" font-size="${Math.round(size * .3)}" font-weight="700" fill="#f5f6f8">${esc(label)}</text></svg>`;
+}
+function agentCard(a, d, wide = false, extra = "") {
+  const P = d.params || {};
+  let sub = "", subColor = "var(--t2)", body = "";
+  if (a === "SCANNER") {
+    sub = `${nf(0).format(d.pools_seen || 0)} ${PERPS ? "pares" : "pools"}`; subColor = "#5fb8ff";
+    const seen = new Set(), rows = [];
+    for (const e of d.log || []) {
+      if (e.agent !== "SCANNER" || e.verdict === "wait" || seen.has(e.coin)) continue;
+      seen.add(e.coin); rows.push(e); if (rows.length >= 3) break;
+    }
+    body = rows.length ? rows.map(e => {
+      const ok = e.verdict === "pass";
+      const tag = ok ? (e.stage === "SMARTS" ? "→ analista" : PERPS ? "→ top traders" : "→ baleias") : shortReason(e.reason);
+      return `<div class="sc-row">${coinAv(e.coin, e.img, 20)}<span class="nm${ok ? "" : " cut"}">${esc(e.coin)}</span><span class="tg" style="color:${ok ? "var(--t2)" : "#ff8a8a"}">${esc(tag)}</span></div>`;
+    }).join("") : `<div class="empty">a procurar…</div>`;
+  } else if (a === "ANALYST") {
+    const e = lastOf(d, "ANALYST", e => e.score != null);
+    sub = d.running ? "A avaliar" : "parado"; subColor = "var(--yellow)";
+    if (e) {
+      const state = e.stage === "CORE" ? ["up", "passou"] : e.verdict === "pass" ? ["", "a avaliar…"] : ["down", "chumbou"];
+      const col = e.score >= 70 ? "#34d07f" : e.score >= 50 ? "#ffc83d" : "#ff5c5c";
+      body = `<div class="ring">${ringSvg(e.score / 100, col, String(Math.round(e.score)))}<div class="who">${coinAv(e.coin, e.img, 26)}<b>${esc(e.coin)}${PERPS && e.side ? " " + esc(e.side) : ""}</b><span class="${state[0]}" style="${state[0] ? "" : "color:var(--yellow)"}">${state[1]}</span></div></div>`;
+    } else body = `<div class="ring">${ringSvg(0, "#34d07f", "—")}<div class="who"><span class="t3">à espera do primeiro ${PERPS ? "par" : "token"}</span></div></div>`;
+  } else if (a === "COMPOUNDER") {
+    const mult = (d.equity_eur || 0) / (d.start_eur || 1), goal = P.goal_mult || 10;
+    sub = `${nf(2).format(mult)}× agora`; subColor = "var(--yellow)";
+    const next = (d.cash_eur ?? d.equity_eur ?? 0) * (P.stack_pct || .4);
+    body = `<div class="ring">${ringSvg(Math.log(Math.max(mult, 1)) / Math.log(goal), "#ffc83d", goal + "×")}<div class="who"><span class="t2">próximo objetivo</span><b>${esc(eur((d.start_eur || 0) * goal))}</b><span class="up">${PERPS ? "margem" : "compra"} ${esc(eur(next))}</span></div></div>`;
+  } else if (a === "EXECUTOR") {
+    const n = (d.positions || []).length + (d.trades || []).filter(t => t.kind !== "half").length;
+    sub = `${n} trade${n === 1 ? "" : "s"}`; subColor = "var(--green)";
+    const e = lastOf(d, "EXECUTOR", e => e.verdict === "buy");
+    const queued = (d.ready || [])[0];
+    const fresh = e && Date.now() - new Date(e.ts) < 90e3;
+    body = (e ? `<div class="ex-row">${coinAv(e.coin, e.img, 30)}<div><b>${esc(e.coin)}${PERPS && e.side ? " " + esc(e.side) : ""}</b><span>${esc(eur(e.eur))} · na ${esc(venueName(d))}</span></div></div>`
+              : `<div class="ex-row"><div><b class="t3">nenhuma compra</b><span>à espera do Analista</span></div></div>`)
+      + (queued && d.running ? `<div class="prog"><i style="width:${Math.min(90, 20 + (queued.score || 0) / 2)}%"></i><span>A comprar… ${esc(queued.coin)}</span></div>`
+        : fresh ? `<div class="prog done"><span>✓ Preenchida · ${esc(nf(1).format(e.fill_s ?? 0.4))} s</span></div>`
+        : `<div class="prog idle"><span>${d.running ? "à espera" : "parado"}</span></div>`);
+  } else if (a === "RISK") {
+    const open = (d.positions || []).length;
+    sub = open ? `A vigiar ${open}` : "A guardar"; subColor = "var(--risk)";
+    const e = lastOf(d, "RISK");
+    const what = e ? ({half: PERPS ? "Metade a 2R" : "Metade a 2×", trail: "Lucro (trailing)", stop: "Stop", liq: "Liquidada"}[e.kind] || (e.pnl_eur >= 0 ? "Lucro realizado" : "Fechou")) : "";
+    body = (e ? `<div class="ex-row">${coinAv(e.coin, e.img, 30)}<div><b>${esc(what)}</b><span>${esc(e.coin)} <span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span></span></div></div>`
+              : `<div class="ex-row"><div><b class="t3">nada vendido</b><span>a vigiar a cada 5 s</span></div></div>`)
+      + `<div class="pills">${PERPS ? `<span class="pill r">stop ${esc(nf(1).format(P.stop_atr || 1.5))} ATR</span><span class="pill g">½ a 2R</span><span class="pill">trailing</span>`
+                                    : `<span class="pill r">stop −${nf(0).format((P.stop_pct || .08) * 100)}%</span><span class="pill g">½ a 2×</span><span class="pill">trail ${nf(0).format((P.trail_pct || .1) * 100)}%</span>`}</div>`;
+  }
+  return `<article class="ac${wide ? " wide" : ""}" aria-label="${esc(AG[a].name)}"><div class="ach">${ico(a)}<div><b>${esc(AG[a].name)}</b><small style="color:${subColor}">${esc(sub)}</small></div></div>${body}${extra}</article>`;
+}
+function dots() {
+  const box = $("#cards"), n = ORDER.length;
+  const upd = () => { const i = Math.round(box.scrollLeft / Math.max(1, box.scrollWidth - box.clientWidth) * (n - 1)); $("#cdots").innerHTML = Array.from({length: n}, (_, k) => `<i class="${k === i ? "on" : ""}"></i>`).join(""); };
+  box.onscroll = upd; upd();
+}
+
+/* ---------------------------------------------------------------- activity */
+function activityRows(d) {
+  const out = [], venue = venueName(d);
+  for (const e of d.log || []) {
+    if (e.verdict !== "buy" && e.verdict !== "sell") continue;
+    const t = hhmm(e.ts);
+    let title, sub, right, right2, badge, rcls = "", agent;
+    if (e.verdict === "buy") {
+      agent = "EXECUTOR";
+      title = PERPS ? `Abriu ${e.side || "long"} ${e.coin}${e.lev ? " " + e.lev + "x" : ""}` : `Comprou ${e.coin}`;
+      sub = `40% do saldo livre · ${t}`; right = eur(e.eur); right2 = e.score != null ? `nota ${e.score}` : `na ${venue}`;
+      badge = `<span class="badge" style="background:#2563eb">↗</span>`;
+    } else {
+      agent = "RISK";
+      const k = e.kind || (e.pnl_eur >= 0 ? "trail" : "stop");
+      const verb = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: "Liquidada:", end: "Fechou"}[k] || "Fechou";
+      title = `${verb} ${e.coin}`;
+      const why = {half: PERPS ? "2R · stop na entrada" : "2× · entrada de volta", stop: PERPS ? "stop" : "stop −8%", trail: PERPS ? "trailing do máximo" : "trailing 10% do máximo", liq: "margem perdida", end: "fim da sessão"}[k] || "";
+      sub = `${why} · ${t}`; right = seur(e.pnl_eur); rcls = cls(e.pnl_eur);
+      right2 = PERPS ? pct(e.pct, 1) : (e.mult != null ? xm(e.mult) : pct(e.pct, 1));
+      badge = `<span class="badge" style="background:${e.pnl_eur >= 0 ? "#16a34a" : "#dc2626"}">${e.pnl_eur >= 0 ? "↙" : "×"}</span>`;
+    }
+    out.push(`<div class="act" role="button" tabindex="0" data-coin="${esc(e.coin)}"><span class="av">${coinAv(e.coin, e.img, 44)}${badge}</span><div class="mid"><b>${esc(title)}</b><span>${face(agent, 14)}${esc(sub)}</span></div><div class="rt"><b class="${rcls}">${esc(right)}</b><span>${esc(right2)}</span></div></div>`);
+  }
+  return out;
+}
+function bindRows(el) {
+  $$(".act[data-coin]", el).forEach(r => { r.onclick = () => { location.hash = "#/moeda/" + encodeURIComponent(r.dataset.coin); }; r.onkeydown = ev => { if (ev.key === "Enter") r.click(); }; });
+}
+function renderActivity(d) {
+  const rows = activityRows(d);
+  $("#act-count").textContent = rows.length ? `${rows.length}` : "";
+  $("#act-full").innerHTML = rows.length ? rows.join("") : `<div class="empty">Ainda sem trades nesta sessão</div>`;
+  bindRows($("#act-full"));
+  $("#all-ev").checked = S.allEv;
+  $("#ev-full").innerHTML = S.allEv ? (d.log || []).map(e => `<div class="ev"><span class="t3">${esc(hhmm(e.ts))}</span><span style="color:${(AG[e.agent] || AG.SCANNER).hex}">${esc((AG[e.agent] || {name: e.agent}).name)}</span><span class="rs"><b>${esc(e.coin)}</b> ${esc(e.reason)}</span></div>`).join("") : "";
+}
+$("#all-ev").onchange = e => { S.allEv = e.target.checked; renderActivity(S.d); };
+
+/* ---------------------------------------------------------------- agents tab */
+function renderAgents(d) {
+  $("#running2").textContent = d.running ? `${ORDER.length} a correr` : "parados";
+  const repos = Object.fromEntries((d.repos || []).map(r => [r.agent, r]));
+  const rules = d.rules || [], cuts = d.counts || {};
+  const cutsOf = {SCANNER: ["trends", "smarts"], ANALYST: ["debate", "router"], EXECUTOR: ["exec", "core"]};
+  $("#agents-full").innerHTML = ORDER.map((a, i) => {
+    const c = (cutsOf[a] || []).flatMap(k => Object.entries(cuts[k] || {})).sort((x, y) => y[1] - x[1]).slice(0, 4);
+    const r = repos[a];
+    return agentCard(a, d, true, `<p class="cuts">${esc(rules[i] || "")}</p>${c.length ? `<p class="cuts">cortou: ${c.map(([k, n]) => `<b>${esc(k)}</b> ${n}`).join(" · ")}</p>` : ""}${r ? `<p class="cuts t3">inspirado em ${esc(r.repo)}</p>` : ""}`);
+  }).join("");
+}
+
+/* ---------------------------------------------------------------- account tab */
+function renderAccount(d) {
+  const running = !!d.running, P = d.params || {};
+  $("#acc-state").textContent = running ? "a correr" : "parada";
+  $("#acc-kv").innerHTML = [
+    ["mesa", PERPS ? "Futuros · Hyperliquid" : "Memecoins · Solana"],
+    ["app", venueName(d)],
+    ["saldo fictício", d.start_eur ? eur(d.start_eur) : "—"],
+    ["agora", eur(d.equity_eur)],
+    ["livre", eur(d.cash_eur)],
+    ["sessão", d.started ? `${hhmm(d.started)} → ${hhmm(d.ends)}${running ? "" : " (terminada)"}` : "—"],
+    ...(PERPS ? [["alavancagem", (d.lev || S.lev) + "x (máx. 10x)"]] : []),
+    ["Compounder", `${nf(0).format((P.stack_pct || .4) * 100)}% do livre · máx. ${P.max_open || 2} abertas`],
+  ].map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+  $("#b-stop").disabled = !running; $("#b-new").disabled = running; $("#b-recap").hidden = !d.recap;
+  $("#acc-rules").innerHTML = (d.rules || []).map(r => `<li>${esc(r)}</li>`).join("");
+  const rows = PERPS
+    ? [["Hyperliquid", "preços, livro, funding, top traders"], ["INVO", "sem API pública: só abre a app"]]
+    : [["GMGN", d.gmgn_key ? "ligada com a tua chave" : "sem chave: não usada"], ["GeckoTerminal", "pools e baleias"], ["DexScreener", "preço, liquidez, market cap"], ["Jupiter", "cotações de compra e venda"], ["FOMO", "sem API pública: só abre as moedas"]];
+  $("#acc-feeds").innerHTML = rows.map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+  $("#acc-links").innerHTML = `<a href="/app">Todas as mesas <span>›</span></a>${PERPS ? `<a href="/app#/futuros">Mesa contínua de futuros (4 h, com backtest) <span>›</span></a>` : ""}`;
+}
+$("#b-new").onclick = () => openConnect();
+$("#b-recap").onclick = () => openRecap();
+$("#b-stop").onclick = async () => {
+  if (!confirm(PERPS ? "Parar a sessão agora? Fecha todas as posições ao último preço." : "Parar a sessão agora? Vende tudo ao último preço.")) return;
+  $("#b-stop").disabled = true;
+  try { await api(K.api + "/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); banner("A parar a sessão…", `a ${PERPS ? "fechar" : "vender"} as posições em papel`); setTimeout(async () => { await load(); openRecap(); }, 20000); }
+  catch (e) { banner("Não deu para parar", e.message); $("#b-stop").disabled = false; }
+};
+$("#livepill").onclick = () => { location.hash = "#/conta"; };
+
+/* ---------------------------------------------------------------- coin page */
+function findCoin(d, key) {
+  const pos = (d.positions || []).find(p => p.symbol === key || p.id === key);
+  if (pos) return Object.assign({open: true}, pos);
+  const tr = (d.trades || []).filter(t => t.symbol === key || t.id === key);
+  if (!tr.length) return null;
+  const last = tr.find(t => t.kind !== "half") || tr[0], half = tr.find(t => t.kind === "half");
+  return Object.assign({open: false}, last, {half_px: last.half_px || half?.half_px, half_ts: last.half_ts || half?.half_ts,
+    pnl_total: tr.filter(t => t.id === last.id).reduce((s, t) => s + (t.pnl_eur || 0), 0)});
+}
+function renderCoin(d) {
+  const c = findCoin(d, S.coinKey), el = $("#v-coin");
+  if (!c) { el.innerHTML = `<a class="back" href="#/">‹ Início</a><p class="empty">Esta ${PERPS ? "posição" : "moeda"} já não está nos dados da sessão.</p>`; S.coinDraw = null; return; }
+  const P = d.params || {}, venue = venueName(d), sym = String(c.symbol || "").replace(/^\$/, "");
+  const last = c.open ? c.last : c.exit, entry = c.entry;
+  const scale = !PERPS && c.mcap && (c.open ? c.last : c.exit) ? c.mcap / (c.open ? c.last : c.exit) : 0;   // price -> market cap
+  const big = PERPS ? usdP(last) : (scale ? usdK(last * scale) : usdP(last));
+  const move = entry && last ? (PERPS && c.side === "short" ? -1 : 1) * (last / entry - 1) : 0;
+  const sub = PERPS ? `${esc(sym)} · Hyperliquid · ${esc(c.side)} ${esc(c.lev || "")}x` : `${esc(sym)} · Solana${c.created ? " · " + esc(age(c.created)) : ""}`;
+  const result = c.open ? c.pnl_eur : c.pnl_total;
+  el.innerHTML = `<a class="back" href="#/">‹ Início</a>
+    <div class="chead">${coinAv(c.symbol, c.img, 52)}<div><b>${esc(c.name || sym)}</b><span>${sub}</span></div></div>
+    <div class="cbig">${esc(big)}</div>
+    <div class="since"><span class="${move >= 0 ? "up" : "down"}">${move >= 0 ? "▲" : "▼"} ${esc(nf(1).format(Math.abs(move * 100)))}%</span> <span class="t2">desde que o bot ${PERPS ? "abriu" : "comprou"}${c.open ? "" : " · fechada"}</span></div>
+    <div class="legend"><img src="/icon-180.png" alt="" width="16" height="16" style="border-radius:50%"><b>AI Desk Bot</b> na ${esc(venue)} · <i style="background:var(--blue)"></i><i style="background:var(--green);margin-left:-4px"></i> os seus trades</div>
+    <div class="cchart" id="cchart"><canvas id="ccv" role="img" aria-label="Preço desde a entrada"></canvas><div class="marks" id="cmarks"></div></div>
+    <div class="stats">${PERPS
+      ? `<div><span>Preço</span><b>${esc(usdP(last))}</b></div><div><span>${c.open ? "Liquidação" : "Entrada"}</span><b>${esc(usdP(c.open ? c.liq : c.entry))}</b></div>`
+      : `<div><span>Market cap</span><b>${esc(scale ? usdK(last * scale) : usdK(c.mcap))}</b></div><div><span>Preço</span><b>${esc(usdP(last))}</b></div>`}</div>
+    ${rulesBlock(c, d, scale)}
+    <div class="box">${ico("EXECUTOR", 40)}<div class="mid"><b>Posição</b><span>${c.open ? `${esc(eur(c.cost_eur))} ${PERPS ? "de margem" : "investidos"} · na ${esc(venue)}` : `fechada · ${esc(c.why || "")}`}</span></div><div class="rt"><b>${esc(c.open ? eur(c.value_eur) : seur(result))}</b><span class="${cls(result)}">${esc(c.open ? seur(result) : "resultado")}</span></div></div>
+    <div class="box">${ico("RISK", 40)}<div class="mid"><b>Risco · ${c.open ? "a vigiar" : "terminado"}</b><span>${esc(riskLine(c, P, scale))}</span></div></div>
+    <div class="links">${coinLinks(c).map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)} <span>›</span></a>`).join("")}</div>
+    <p class="note">Só para ver. Negociar lá é dinheiro real e decisão tua; esta mesa nunca negoceia por ti.</p>`;
+  S.coinDraw = [c, scale];
+  drawCoin(c, scale);
+}
+function fmtPx(v, scale) { return PERPS ? usdP(v) : (scale ? usdK(v * scale) : usdP(v)); }
+function riskLine(c, P, scale) {
+  if (!c.open) return c.why || "posição fechada";
+  if (c.half_done) return PERPS ? `metade fechada a 2R · stop na entrada · trailing a ${usdP(c.trail)}` : `metade vendida a 2× · trailing 10% · sai a ${fmtPx(c.trail, scale)}`;
+  return PERPS ? `stop ${nf(1).format(P.stop_atr || 1.5)} ATR em ${usdP(c.stop)} · liquidação em ${usdP(c.liq)}` : `stop −8% abaixo da entrada (${fmtPx(c.stop, scale)})`;
+}
+function rulesBlock(c, d, scale) {
+  const P = d.params || {}, venue = venueName(d), sym = String(c.symbol || "").replace(/^\$/, "");
+  const f = v => fmtPx(v, scale) + (!PERPS && scale ? " MC" : "");
+  const half = !!(c.half_done || c.half_px), closed = !c.open;
+  const rows = [
+    ["EXECUTOR", `Executor <small>${esc(venue)} · ${esc(hhmm(c.opened))}</small>`, PERPS ? `abriu ${c.side} ${c.lev}x a ${usdP(c.entry)}` : `comprou a ${f(c.entry)}${c.cost_eur ? " · " + eur(c.cost_eur) : ""}`, `nota ${c.score ?? "—"} · papel`, ["blue", PERPS ? "abriu" : "comprou"]],
+    ["COMPOUNDER", `Compounder <small>dimensionado</small>`, `${nf(0).format((P.stack_pct || .4) * 100)}% do saldo livre na entrada`, `máx. ${P.max_open || 2} abertas · nunca reforça`, ["", "dimensionado"]],
+  ];
+  if (PERPS) {
+    rows.push(["RISK", `Stop <small>${half ? "na entrada" : nf(1).format(P.stop_atr || 1.5) + " ATR"}</small>`, `fecha a ${usdP(c.stop)}`, c.liq ? `liquidação a ${usdP(c.liq)}` : "", closed ? ["off", "fim"] : ["armed", "armado"]]);
+    rows.push(["RISK", `Saída <small>metade a 2R</small>`, half ? `fechou metade a ${usdP(c.half_px)} · stop para a entrada` : "fecha metade a 2× o risco", "", half ? ["done", "fechou metade"] : closed ? ["off", "não chegou"] : ["", "pendente"]]);
+    rows.push(["RISK", `Trailing <small>${nf(1).format(P.trail_atr || 1.5)} ATR</small>`, half ? (c.trail ? `sai a ${usdP(c.trail)}` : "seguiu o máximo") : "só depois da metade", "", half ? (closed ? ["done", "saiu"] : ["armed", "armado"]) : ["off", "à espera"]]);
+  } else {
+    const sp = P.stop_pct || .08;
+    rows.push(["RISK", `Hard stop <small>−${nf(0).format(sp * 100)}%</small>`, `vende a ${f(c.entry * (1 - sp))} só se o 2× nunca chegar`, `stop ${pct(-sp, 0)} · sem reforços`, half ? ["off", "desligado"] : closed ? ["off", "fim"] : ["armed", "armado"]]);
+    rows.push(["RISK", `Saída <small>${esc(venue)} · metade a 2×</small>`, half ? `vendeu metade a ${f(c.half_px)} · a entrada voltou` : `metade a ${f(c.entry * (P.half_at || 2))} · a entrada volta`, "", half ? ["done", "vendeu metade"] : closed ? ["off", "não chegou"] : ["", "pendente"]]);
+    rows.push(["RISK", `Trailing <small>${nf(0).format((P.trail_pct || .1) * 100)}% do máximo</small>`, half ? (c.trail ? `sai a ${f(c.trail)} · máximo ${f(c.peak)}` : "seguiu o máximo") : "só depois do 2×", "", half ? (closed ? ["done", "saiu"] : ["armed", "armado"]) : ["off", "à espera"]]);
+  }
+  const state = closed ? "fechada" : half ? "trailing armado" : "stop armado";
+  return `<div class="rules-h"><b>Regras da mesa · ${esc(sym)}</b><span>${rows.length} regras · ${esc(state)}</span></div>` +
+    rows.map(([a, t, s1, s2, [k, chip]]) => `<div class="rule">${ico(a, 32)}<div class="tx"><b>${t}</b><span>${esc(s1)}</span>${s2 ? `<em>${esc(s2)}</em>` : ""}</div><span class="chip ${k}">${esc(chip)}</span></div>`).join("");
+}
+function coinLinks(c) {
+  if (PERPS) return [["Abrir na INVO", "https://app.invoapp.com/"], ["Abrir na Hyperliquid", `https://app.hyperliquid.xyz/trade/${encodeURIComponent(String(c.symbol))}`]];
+  if (!c.mint) return [];
+  const m = encodeURIComponent(c.mint);
+  const app = {gmgn: ["Abrir na GMGN", `https://gmgn.ai/sol/token/${m}`], fomo: ["Abrir na FOMO", `https://fomo.family/tokens/solana/${m}`]};
+  const v = (S.d && S.d.venue) === "fomo" ? "fomo" : "gmgn";
+  return [app[v], app[v === "gmgn" ? "fomo" : "gmgn"], ["Abrir no pump.fun", `https://pump.fun/coin/${m}`], ["Abrir no DexScreener", `https://dexscreener.com/solana/${m}`]];
+}
+function drawCoin(c, scale) {
+  const box = $("#cchart"), cv = $("#ccv"); if (!box || !cv) return;
+  const W = box.clientWidth, H = box.clientHeight, dpr = devicePixelRatio || 1;
+  if (!W) return;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const pts = (c.series || []).filter(p => p[1] > 0);
+  const marks = $("#cmarks"); marks.innerHTML = "";
+  if (pts.length < 2) { g.fillStyle = "#666a73"; g.font = "14px -apple-system,system-ui,sans-serif"; g.fillText("o gráfico aparece com os primeiros preços", 18, H / 2); return; }
+  const extra = [c.entry, c.open ? c.stop : null, c.open ? c.trail : null].filter(v => v > 0);
+  const vals = pts.map(p => p[1]).concat(extra);
+  let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * .12 || hi * .02; lo -= pad; hi += pad;
+  const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+  const X = t => 18 + (t - x0) / ((x1 - x0) || 1) * (W - 104), Y = v => 16 + (hi - v) / (hi - lo) * (H - 36);
+  const hline = (v, color) => { g.strokeStyle = color; g.setLineDash([3, 4]); g.lineWidth = 1; g.beginPath(); g.moveTo(10, Y(v)); g.lineTo(W - 10, Y(v)); g.stroke(); g.setLineDash([]); };
+  hline(c.entry, "rgba(76,141,255,.55)");
+  if (c.open && c.stop) hline(c.stop, "rgba(255,92,92,.45)");
+  if (c.open && c.trail) hline(c.trail, "rgba(255,176,32,.6)");
+  // one bar per price step, green up and red down, like small candles
+  const bw = Math.max(2, Math.min(8, (W - 104) / pts.length * .62));
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1][1], b = pts[i][1];
+    g.fillStyle = b >= a ? "#34d07f" : "#ff5c5c";
+    const y1 = Y(Math.max(a, b)), y2 = Y(Math.min(a, b));
+    g.fillRect(X(pts[i][0]) - bw / 2, y1, bw, Math.max(1.5, y2 - y1));
+  }
+  const lp = pts[pts.length - 1];
+  const tag = (x, y, text, k = "") => marks.insertAdjacentHTML("beforeend", `<span class="tagl ${k}" style="left:${x}px;top:${y}px">${esc(text)}</span>`);
+  tag(Math.min(W - 80, Math.max(80, X(x0) + 70)), Math.min(H - 12, Y(c.entry) + 16), `Entrada · ${fmtPx(c.entry, scale)}`);
+  if (c.half_ts && c.half_px) tag(Math.min(W - 90, Math.max(90, X(c.half_ts))), Math.max(12, Y(c.half_px) - 18), PERPS ? "Metade · 2R" : "Metade · 2×", "g");
+  if (c.open && c.trail) tag(Math.max(90, W - 150), Math.min(H - 12, Y(c.trail) + 14), `Trail · ${fmtPx(c.trail, scale)}`, "o");
+  tag(W - 10, Y(lp[1]), fmtPx(lp[1], scale), "now");
+}
+
+/* ---------------------------------------------------------------- notifications and confetti */
+let bannerTimer = null;
+function banner(title, body, img, coin) {
+  const b = $("#banner");
+  b.innerHTML = `<img class="app" src="/icon-180.png" alt=""><div class="tx"><b>${esc(title)}</b><span>${esc(body)}</span></div>${coin ? coinAv(coin, img, 30) : ""}`;
+  b.classList.add("on"); clearTimeout(bannerTimer); bannerTimer = setTimeout(() => b.classList.remove("on"), 5200);
+}
+function notify(d) {
   const fresh = (d.log || []).filter(e => !S.lastEv || e.ts > S.lastEv);
   if (fresh.length) S.lastEv = fresh[0].ts;
-  const e = fresh.find(x => x.verdict === "sell" || x.verdict === "buy" || (x.agent === "CORE" && x.verdict === "pass") || (x.agent === "SMARTS" && x.verdict === "pass"));
+  const e = fresh.find(x => x.verdict === "sell" || x.verdict === "buy" || x.stage === "CORE");
   if (!e) return;
-  const icon = `<img src="/icon-180.png" alt="" width="34" height="34" style="border-radius:9px">`;
-  const via = VENUE_NAME[d.venue || S.venue] || "GMGN";
-  if (e.verdict === "sell") toast(`${icon}<div><b>${KIND === "perps" ? "Fechou" : "Vendeu"} ${esc(e.coin)} ${esc(seur(e.pnl_eur))}</b><span>${esc((e.reason || "").split(")")[0].replace(/^(vendeu|fechou \w+) \(/, ""))} · via ${via} · papel</span></div>`);
-  else if (e.verdict === "buy") toast(`${icon}<div><b>${KIND === "perps" ? `Abriu ${esc(e.side || "long")} ${esc(e.coin)} ${esc(e.lev || "")}x` : `Comprou ${esc(e.coin)}`}</b><span>5/5 agentes concordaram · via ${via} · papel</span></div>`);
-  else if (e.agent === "CORE") toast(`${icon}<div><b>${esc(e.coin)}: 5/5 agentes concordaram</b><span>${esc(e.reason)}</span></div>`);
-  else if (KIND === "perps") toast(`${face("SMARTS", 34)}<div><b>Top traders ${esc((e.reason || "").includes(" short") ? "short" : "long")} em ${esc(e.coin)}</b><span>${esc(e.reason)} · SMARTS</span></div>`);
-  else toast(`${face("SMARTS", 34)}<div><b>Smart money a comprar ${esc(e.coin)}</b><span>${esc(e.reason)} · SMARTS</span></div>`);
+  const v = venueName(d);
+  if (e.verdict === "buy") banner(PERPS ? `Abriu ${e.side || "long"} ${e.coin} ${e.lev || ""}x · ${eur(e.eur)}` : `Comprou ${e.coin} · ${eur(e.eur)}`, `40% do saldo livre · nota ${e.score ?? "—"} · na ${v} · papel`, e.img, e.coin);
+  else if (e.verdict === "sell") {
+    const what = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: "Liquidada:"}[e.kind] || "Fechou";
+    const tail = e.kind === "half" ? (PERPS ? "O stop passou para a entrada; o resto segue com trailing." : "A entrada voltou; o resto segue com trailing de 10%.")
+      : e.kind === "stop" ? "Posição pequena, segue em frente." : "Próxima compra: 40% do saldo livre.";
+    banner(`${what} ${e.coin} · ${seur(e.pnl_eur)}`, tail, e.img, e.coin);
+  } else banner(`${e.coin} passou no Analista`, e.reason, e.img, e.coin);
+}
+function celebrate(d) {
+  if (!d.started) return;
+  const mult = (d.equity_eur || 0) / (d.start_eur || 1);
+  const hit = [1.5, 2, 3, 5, 10, 20].filter(s => mult >= s).pop() || 0;
+  const key = "deskbot-cele-" + KIND + "-" + d.started;
+  if (hit <= +(store.get(key) || 0)) return;
+  store.set(key, String(hit));
+  if (S.celebInit && !REDUCED) confetti();   // not on the first load
+}
+function confetti() {
+  const cv = $("#confetti"); cv.hidden = false;
+  const W = cv.width = innerWidth, H = cv.height = innerHeight, g = cv.getContext("2d");
+  const cols = ["#34d07f", "#ffc83d", "#4c8dff", "#ff5fa8", "#a98bff", "#2dd4bf"];
+  const ps = Array.from({length: 120}, () => ({x: W / 2 + (Math.random() - .5) * 140, y: H * .18, vx: (Math.random() - .5) * 9, vy: -Math.random() * 9 - 2, s: 4 + Math.random() * 5, c: cols[Math.floor(Math.random() * cols.length)], r: Math.random() * 6}));
+  let t = 0;
+  (function tick() {
+    g.clearRect(0, 0, W, H);
+    for (const p of ps) { p.vy += .28; p.x += p.vx; p.y += p.vy; p.r += .2; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); g.restore(); }
+    if (++t < 110) requestAnimationFrame(tick); else { g.clearRect(0, 0, W, H); cv.hidden = true; }
+  })();
 }
 
-/* ---------------------------------------------------------------- sheets */
+/* ---------------------------------------------------------------- sheets: connect and recap */
 function sheet(html) { $("#sheet-in").innerHTML = `<div class="grab" aria-hidden="true"></div>` + html; $("#sheet").hidden = false; }
 function closeSheet() { $("#sheet").hidden = true; }
 $("#sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeSheet(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
 const DUR = [[5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [120, "2 h"], [720, "12 h"]];
 function openConnect() {
-  const d = S.d || {}, stakes = d.stakes || [50, 110, 500, 1000], perps = KIND === "perps";
-  const venues = perps ? ["invo"] : ["gmgn", "fomo"];
+  const d = S.d || {}, stakes = d.stakes || [20, 50, 110, 500, 1000];
+  const venues = PERPS ? ["invo"] : ["gmgn", "fomo"];
   if (!venues.includes(S.venue)) S.venue = venues[0];
-  const until = new Date(Date.now() + S.minutes * 60000);
-  const data = perps ? "Hyperliquid · top traders · livro de ordens" : (d.gmgn_key ? "GMGN · smart money · KOLs · rug score" : "GeckoTerminal · Jupiter · pump.fun");
-  sheet(`<div class="conn-icons"><img src="/icon-180.png" alt=""><span class="dots">• • •</span><span class="vbadge" id="c-badge">${VENUE_NAME[S.venue]}</span></div>
-    <h2 id="c-h">Ligar à ${VENUE_NAME[S.venue]}</h2><p class="t3" style="text-align:center;margin:0;font-size:12.5px" id="c-sub">AI Desk Bot quer negociar ${K.what} através da ${VENUE_NAME[S.venue]} · em papel</p>
-    ${perps ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>`}
-    <div class="kv"><div><span>${perps ? "exchange" : "chains"}</span><span>${perps ? "Hyperliquid (a da INVO)" : "Solana"}</span></div><div><span>dados</span><span>${esc(data)}</span></div><div><span>skills</span><span>5 repos · 5 agentes · 1 núcleo</span></div><div><span>sessão</span><span id="c-sess"></span></div></div>
-    <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
-    <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
-    ${perps ? `<div class="lbl">alavancagem (máximo 10x)</div><div class="choice" id="c-lev">${(d.levs || [2, 5, 10]).map(v => `<button data-l="${v}" aria-pressed="${v === S.lev}">${v}x</button>`).join("")}</div>` : ""}
-    <ul class="perm"><li><span class="y">✓</span> ${perps ? "pares · top traders · livro de ordens · trades em papel" : "tokens · carteiras · dados de mercado · trades em papel"}</li><li><span class="y">✓</span> tu escolhes o saldo, a duração${perps ? " e a alavancagem" : ""}</li><li><span class="n">✕</span> não mexe em dinheiro real nem na tua conta <span id="c-acc">${VENUE_NAME[S.venue]}</span></li></ul>
-    ${!perps && !d.gmgn_key ? `<p class="t3" style="font-size:11.5px;margin:8px 0 0">Sem chave GMGN: os agentes usam GeckoTerminal e Jupiter. Com a tua chave (posta no PC) entram o smart money, os KOLs e o rug score da GMGN.</p>` : ""}
-    <button class="go" id="c-go">Ligar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
-  const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}${perps ? " · " + S.lev + "x" : ""}`; };
+  if (!stakes.includes(S.eur)) S.eur = 110;
+  const data = PERPS ? "Hyperliquid · top traders · livro de ordens" : (d.gmgn_key ? "GMGN · smart money · KOLs · rug score" : "GeckoTerminal · Jupiter · pump.fun");
+  sheet(`<div class="conn-icons"><img src="/icon-180.png" alt=""><span class="dots3">• • •</span><span class="vbadge" id="c-badge">${VENUE_NAME[S.venue]}</span></div>
+    <h2 id="c-h">Ligar à ${VENUE_NAME[S.venue]}</h2><p class="t2" style="text-align:center;margin:0;font-size:14px" id="c-sub">AI Desk Bot quer negociar ${K.what} através da ${VENUE_NAME[S.venue]} · em papel</p>
+    ${PERPS ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>`}
+    <div class="kv" style="margin-top:14px"><div><span>${PERPS ? "exchange" : "chain"}</span><span>${PERPS ? "Hyperliquid (a da INVO)" : "Solana"}</span></div><div><span>dados</span><span>${esc(data)}</span></div><div><span>agentes</span><span>5 · Scanner → Risco</span></div><div><span>sessão</span><span id="c-sess"></span></div></div>
+    <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
+    <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button type="button" data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
+    ${PERPS ? `<div class="lbl">alavancagem (máximo 10x)</div><div class="choice" id="c-lev">${(d.levs || [2, 5, 10]).map(v => `<button type="button" data-l="${v}" aria-pressed="${v === S.lev}">${v}x</button>`).join("")}</div>` : ""}
+    <ul class="perm"><li><span class="y">✓</span> Compounder: 40% do saldo livre por trade, no máximo 2 abertas</li><li><span class="y">✓</span> ${PERPS ? "metade a 2R, stop para a entrada, o resto com trailing" : "metade a 2×, o resto com trailing de 10%, stop −8% antes"}</li><li><span class="n">✕</span> não mexe em dinheiro real nem na tua conta <span id="c-acc">${VENUE_NAME[S.venue]}</span></li></ul>
+    <button class="go" id="c-go" type="button">Ligar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
+  const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}${PERPS ? " · " + S.lev + "x" : ""}`; };
   sess();
-  document.querySelectorAll("#c-ven button").forEach(b => b.onclick = () => {
-    S.venue = b.dataset.v; store.set("deskbot-venue", S.venue);
-    document.querySelectorAll("#c-ven button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
-    const n = VENUE_NAME[S.venue]; $("#c-badge").textContent = n; $("#c-h").textContent = "Ligar à " + n; $("#c-acc").textContent = n;
-    $("#c-sub").textContent = `AI Desk Bot quer negociar ${K.what} através da ${n} · em papel`;
-  });
-  document.querySelectorAll("#c-lev button").forEach(b => b.onclick = () => { S.lev = +b.dataset.l; document.querySelectorAll("#c-lev button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
-  document.querySelectorAll("#c-dur button").forEach(b => b.onclick = () => { S.minutes = +b.dataset.m; document.querySelectorAll("#c-dur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
-  document.querySelectorAll("#c-eur button").forEach(b => b.onclick = () => { S.eur = +b.dataset.e; document.querySelectorAll("#c-eur button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
+  const pick = (sel, fn) => $$(sel + " button").forEach(b => b.onclick = () => { fn(b); $$(sel + " button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
+  pick("#c-ven", b => { S.venue = b.dataset.v; store.set("deskbot-venue", S.venue); const n = VENUE_NAME[S.venue]; $("#c-badge").textContent = n; $("#c-h").textContent = "Ligar à " + n; $("#c-acc").textContent = n; $("#c-sub").textContent = `AI Desk Bot quer negociar ${K.what} através da ${n} · em papel`; });
+  pick("#c-dur", b => { S.minutes = +b.dataset.m; });
+  pick("#c-eur", b => { S.eur = +b.dataset.e; });
+  pick("#c-lev", b => { S.lev = +b.dataset.l; });
   $("#c-go").onclick = async () => {
     const go = $("#c-go"); go.disabled = true; go.textContent = "A ligar…";
-    const body = perps ? {minutes: S.minutes, eur: S.eur, lev: S.lev} : {minutes: S.minutes, eur: S.eur, venue: S.venue};
+    const body = PERPS ? {minutes: S.minutes, eur: S.eur, lev: S.lev} : {minutes: S.minutes, eur: S.eur, venue: S.venue};
     try {
       await api(K.api + "/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
       go.textContent = "Ligado ✓"; go.classList.add("done");
-      setTimeout(() => { openRepos(); }, 700);
-      S.lastEv = new Date().toISOString(); load();
+      S.lastEv = new Date().toISOString();
+      setTimeout(() => { closeSheet(); location.hash = "#/"; load(); }, 700);
     } catch (e) { go.disabled = false; go.textContent = "Ligar"; $("#c-msg").textContent = e.message; }
   };
-}
-function openRepos() {
-  const repos = (S.d && S.d.repos) || [];
-  sheet(`<div class="box-h"><b>${repos.length} repos · 5 agentes · 1 núcleo</b><span>● ${repos.length}/${repos.length} online</span></div>
-    <div class="repos">${repos.map(r => `<div class="rp"><div class="t"><span>● ${esc(r.repo)}</span><span class="t3">★ ${short(STARS[r.repo] || 0)}</span></div><div class="d">${esc(r.role)}</div><span class="role" style="background:${AG[r.agent].hex}22;color:${AG[r.agent].hex}">${face(r.agent, 16)} ${r.agent} · online</span></div>`).join("")}</div>
-    <p class="t3" style="font-size:11.5px">Os papéis são inspirados nestes repositórios; os dados vêm de APIs públicas e tudo corre em papel.</p>
-    <button class="go" id="r-ok">Ver a mesa</button>`);
-  $("#r-ok").onclick = closeSheet;
 }
 function openRecap() {
   const r = S.d && S.d.recap; if (!r) return;
   const diff = r.end_eur - r.start_eur, h = r.minutes >= 60 ? `${Math.round(r.minutes / 60)}h` : `${r.minutes} min`;
-  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="/icon-180.png" alt="" width="36" height="36" style="border-radius:9px"><div><b style="font-size:17px">Resumo ${esc(h)}</b><div class="t3 mono" style="font-size:11px">${K.chip} · via ${VENUE_NAME[(S.d && S.d.venue) || S.venue]} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+  sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="/icon-180.png" alt="" width="38" height="38" style="border-radius:10px"><div><b style="font-size:18px">Resumo de ${esc(h)}</b><div class="t3 mono" style="font-size:11.5px">${K.chip} · na ${esc(venueName(S.d))} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
     <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
-    <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="pill">${nf(1).format(r.end_eur / (r.start_eur || 1))}×</span></div>
-    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>${K.unit}</span><b>${r.coins_seen}</b></div><div><span>repos</span><b>5</b></div><div><span>agentes</span><b>5</b></div></div>
-    <p style="font:12px/1.6 var(--mono);color:var(--t2);margin:12px 0 0">${r.best ? `melhor ${esc(r.best.symbol)} <span class="${cls(r.best.pnl_eur)}">${esc(seur(r.best.pnl_eur))}</span><br>pior ${esc(r.worst.symbol)} <span class="${cls(r.worst.pnl_eur)}">${esc(seur(r.worst.pnl_eur))}</span><br>` : (KIND === "perps" ? "nenhum par passou os 5 agentes<br>" : "nenhuma moeda passou os 5 agentes<br>")}acerto ${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"} · ${esc(r.stop_txt || "stop −" + nf(0).format((r.stop_pct || .08) * 100) + "% em cada trade")}<br><span class="t3">papel: nenhuma ordem real</span></p>
-    <button class="go" id="re-new">Nova sessão</button></div>`);
+    <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="mult${diff < 0 ? " neg" : ""}">${nf(2).format(r.end_eur / (r.start_eur || 1))}×</span></div>
+    <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>${K.unit}</span><b>${r.coins_seen}</b></div><div><span>agentes</span><b>5</b></div><div><span>acerto</span><b>${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"}</b></div></div>
+    <p style="font:13px/1.6 var(--mono);color:var(--t2);margin:14px 0 0">${r.best ? `melhor ${esc(r.best.symbol)} <span class="${cls(r.best.pnl_eur)}">${esc(seur(r.best.pnl_eur))}</span><br>pior ${esc(r.worst.symbol)} <span class="${cls(r.worst.pnl_eur)}">${esc(seur(r.worst.pnl_eur))}</span><br>` : `${PERPS ? "nenhum par" : "nenhuma moeda"} passou os agentes<br>`}${esc(r.stop_txt || "Compounder 40% · metade a 2× · trailing 10% · stop −8%")}<br><span class="t3">papel: nenhuma ordem real</span></p>
+    <button class="go" id="re-new" type="button">Nova sessão</button></div>`);
   $("#re-new").onclick = openConnect;
 }
-function coinSheet(coin, mint) {
-  let links;
-  if (KIND === "perps") {
-    const c = encodeURIComponent(coin);
-    links = [["Abrir na INVO", "https://app.invoapp.com/"], ["Abrir na Hyperliquid", `https://app.hyperliquid.xyz/trade/${c}`]];
-  } else {
-    if (!mint) return;
-    const m = encodeURIComponent(mint);
-    const app = {gmgn: ["Abrir na GMGN", `https://gmgn.ai/sol/token/${m}`], fomo: ["Abrir na FOMO", `https://fomo.family/tokens/solana/${m}`]};
-    const v = (S.d && S.d.venue) === "fomo" ? "fomo" : "gmgn";
-    links = [app[v], app[v === "gmgn" ? "fomo" : "gmgn"], ["Abrir no pump.fun", `https://pump.fun/coin/${m}`], ["Abrir no DexScreener", `https://dexscreener.com/solana/${m}`]];
-  }
-  sheet(`<h2 style="text-align:left;margin:0 0 8px">${esc(coin)}</h2><div class="links">${links.map(([t, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)} <span aria-hidden="true">›</span></a>`).join("")}</div>
-    <p class="t3" style="font-size:11.5px">Só para ver. Negociar lá é dinheiro real e decisão tua; esta mesa nunca negoceia por ti.</p>`);
-}
-$("#b-new").onclick = openConnect;
-$("#b-stop").onclick = async () => {
-  if (!confirm(KIND === "perps" ? "Parar a sessão agora? Fecha todas as posições ao último preço e mostra o resumo." : "Parar a sessão agora? Vende tudo ao último preço e mostra o resumo.")) return;
-  $("#b-stop").disabled = true;
-  try { await api(K.api + "/stop", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}); toast(`<div><b>A parar a sessão…</b><span>a ${KIND === "perps" ? "fechar" : "vender"} as posições em papel</span></div>`); setTimeout(async () => { await load(); openRecap(); }, 20000); }
-  catch (e) { toast(`<div><b>Não deu para parar</b><span>${esc(e.message)}</span></div>`); $("#b-stop").disabled = false; }
-};
 
 /* ---------------------------------------------------------------- start */
-boot(() => { load(); S.timer = setInterval(() => { if (!document.hidden) load(); }, 5000); });
+route();
+load();
+setInterval(() => { if (!document.hidden) load(); }, 5000);
 </script>
 </body>
 </html>

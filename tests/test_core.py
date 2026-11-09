@@ -373,7 +373,7 @@ def test_memes_mode_buys_only_when_all_five_agree(monkeypatch, tmp_path):
             "relationships": {"base_token": {"data": {"id": "solana_MINT1"}}}}
     desk.auditor("POOL1", pool, "$DEEP")
     assert [r["coin"] for r in desk.ready] == ["$DEEP"]
-    assert any(e["agent"] == "CORE" and "5/5" in e["reason"] for e in desk.d.events)
+    assert any(e["stage"] == "CORE" and e["agent"] == "ANALYST" and "5/5" in e["reason"] for e in desk.d.events)
     # whales selling: SMARTS says no and nothing else runs
     sellers = [{"attributes": {**w["attributes"], "kind": "sell"}} for w in whales]
     monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": sellers} if "/trades" in path else info)
@@ -393,7 +393,7 @@ def test_memes_gmgn_smart_money_can_pass_smarts_and_rug_score_blocks(monkeypatch
     monkeypatch.setattr(desk.gmgn, "token", lambda mint: dict(gm))
     monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": []})   # no whale trades at all
     assert desk.smarts("POOL", "$X", "MINT")["ok"] is True
-    assert "3 SM · 1 KOL" in desk.d.agents["SMARTS"]["text"]
+    assert "3 SM · 1 KOL" in desk.d.agents["SCANNER"]["text"]
     gm.update(smart=0, kol=1)
     assert desk.smarts("POOL", "$X", "MINT")["ok"] is False
     gm.update(rug=0.6)
@@ -404,7 +404,7 @@ def test_memes_gmgn_smart_money_can_pass_smarts_and_rug_score_blocks(monkeypatch
     pool = {"attributes": {"reserve_in_usd": "250000", "transactions": {"h1": {"buyers": 300, "buys": 900, "sells": 400}},
                            "volume_usd": {"m5": 9000, "h1": 90000}, "price_change_percentage": {"m5": -2, "h1": 10}}}
     out = desk.debate("POOL", pool, "$X", "MINT")
-    assert out["ok"] is False and "rug 0,60" in desk.d.agents["DEBATE"]["text"]
+    assert out["ok"] is False and "rug 0,60" in desk.d.agents["ANALYST"]["text"]
 
 
 def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tmp_path):
@@ -426,16 +426,45 @@ def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tm
     desk.trends("AAA")
     assert desk.queue and desk.queue[0][1] == 1           # TRENDS says long
     desk.auditor(*desk.queue.pop(0))
-    assert not desk.ready and desk.d.agents["SMARTS"]["ok"] is False
+    assert not desk.ready and desk.d.agents["SCANNER"]["ok"] is False
     desk.cool.clear()
     desk.crowd = {"AAA": {"long": 6, "short": 1, "long_usd": 9e6, "short_usd": 1e6}}
     desk.trends("AAA")
     desk.auditor(*desk.queue.pop(0))
     assert [r["coin"] for r in desk.ready] == ["AAA"]
-    assert any(e["agent"] == "CORE" and "5/5" in e["reason"] for e in desk.d.events)
+    assert any(e["stage"] == "CORE" and e["agent"] == "ANALYST" and "5/5" in e["reason"] for e in desk.d.events)
     desk.execute_best()
     q = desk.d.positions[0]
     assert q.side == 1 and q.lev == 5                     # session asked 10x, the coin allows 5x
     assert q.liq < q.stop < q.entry                       # the stop comes before liquidation
     desk.close(q, q.entry * 1.01, "teste")
     assert desk.d.trades[0]["pnl_usd"] > 0 and not desk.d.positions
+
+
+def test_compounder_sizes_40pct_of_free_cash_sells_half_at_2x_then_trails(monkeypatch, tmp_path):
+    """Memes Compounder: 40% of free cash, max 2 open; -8% stop before 2x; half at 2x; trail 10% after."""
+    from deskbot import memetest, memedesk
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    desk = memedesk.MemesDesk(30, 100)
+    desk.gmgn.key = ""
+    assert desk.p.max_positions == 2 and desk.trade_size(10_000_000) == 40.0
+    desk._sol = (0.0, 0.0)            # no SOL price: exits use the price model, no network
+    def pos(pool, cost):
+        p = memetest.Position(pool, "$" + pool, pool, pool, "MINT" + pool, "2026-01-01T00:00:00+00:00",
+                              1.0, 1.0, cost, cost, 1e12, 1.0, 1.0)
+        desk.d.cash -= cost
+        desk.d.positions.append(p)
+        return p
+    a, b = pos("A", 40.0), pos("B", 24.0)
+    live = lambda px_a, px_b: {"A": {"priceUsd": px_a, "liquidity": {"usd": 1e12}},
+                               "B": {"priceUsd": px_b, "liquidity": {"usd": 1e12}}}
+    desk._apply_risk(live(2.05, 0.91), False)          # A doubles, B falls 9%
+    assert a.half_done and abs(a.qty - 20.0) < 1e-9   # half sold, the rest rides
+    assert b not in desk.d.positions and desk.d.trades[-1]["kind"] == "stop"
+    half = next(t for t in desk.d.trades if t["kind"] == "half")
+    assert half["got_usd"] >= 40.0 * 0.98              # the half brought the entry back (less costs)
+    desk._apply_risk(live(3.0, 0.91), False)           # new high: trail moves up
+    desk._apply_risk(live(2.6, 0.91), False)           # more than 10% off 3.0
+    assert a not in desk.d.positions and desk.d.trades[-1]["kind"] == "trail"
+    assert {e["agent"] for e in desk.d.events if e["verdict"] == "sell"} == {"RISK"}

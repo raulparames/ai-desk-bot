@@ -30,13 +30,13 @@ DURATIONS = (5, 10, 15, 30, 120, 720)
 META = {
     "memes": {"title": "Memecoins", "mode": "memecoins", "color": "#ff4fa3",
               "subtitle": "memecoins da Solana · sessões de 5 min a 12 h",
-              "blurb": "Modo memes: 5 agentes (tendências, baleias, debate, rota Jupiter, execução). Stop −8%, 8% do saldo por moeda."},
+              "blurb": "5 agentes (Scanner, Analista, Compounder, Executor, Risco). 40% do saldo livre por compra, metade a 2×, trailing 10%, stop −8%."},
     "futuros": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
                 "subtitle": "perpétuos de cripto · long e short · velas de 4 h",
                 "blurb": "BTC, ETH, SOL, BNB e XRP. Long e short, alavancagem máxima 10x, 1% de risco por trade."},
     "perps": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
               "subtitle": "perpétuos da Hyperliquid · INVO · sessões de 5 min a 12 h",
-              "blurb": "Modo futuros: 5 agentes (tendência, top traders, debate, livro de ordens, execução). Long e short até 10x."},
+              "blurb": "5 agentes na Hyperliquid (a da INVO). Long e short até 10x, 40% do saldo livre de margem, metade a 2R, trailing."},
     "acoes": {"title": "Ações", "mode": "ações", "color": "#1e9bf0",
               "subtitle": "S&P 500 com filtro de tendência · revisto todos os meses",
               "blurb": "SPY quando está acima da média de 200 dias; senão ouro ou obrigações. Sem alavancagem."},
@@ -79,7 +79,7 @@ def perp_running() -> bool:
     return _running(PERP_DIR)
 
 
-STAKES = (50, 110, 500, 1000)
+STAKES = (20, 50, 110, 500, 1000)
 VENUES = ("gmgn", "fomo")       # where the memes app opens each coin (orders stay in paper)
 LEVERAGES = (2, 5, 10)
 
@@ -271,29 +271,44 @@ def _memes() -> dict:
              "Risk: preço a cada 15 s; stop -6%, trailing a partir de +20% que vende 12% abaixo do máximo",
              "Custos de 1% por lado mais o impacto no pool; no fim da sessão vende tudo ao último preço"]
     from . import memedesk
-    rules = ["TRENDS: pools em alta e moedas que saíram do pump.fun (GeckoTerminal); corta liquidez < $40 000, +80% numa hora, pool < 10 min",
-             "SMARTS: baleias — compras de $500 ou mais nos últimos 30 min; precisa de 3 baleias diferentes e mais compras do que vendas",
-             "DEBATE: 5 votos bull/bear e a equipa de risco (mint e freeze revogados, top 10 < 25%, sem honeypot, há vendas); precisa de risco ok e 4 bulls",
-             "ROUTER: cotação real da Jupiter para o tamanho do trade; recusa mais de 2% de impacto",
-             "EXEC: a melhor nota primeiro, 1 compra a cada 2 min, 8% do saldo, no máx. 5 posições; preço a cada 5 s; stop −8%, trailing a partir de +20% (vende 12% abaixo do máximo)",
-             "CORE: só compra quando os 5 concordam. Tudo em papel: nenhuma carteira, nenhuma ordem real"]
+    rules = ["Scanner: pools em alta e moedas que saíram do pump.fun; corta liquidez < $40 000, +80% numa hora e pools com menos de 10 min. Depois as baleias: 3 compras de $500+ em 30 min e mais compras do que vendas",
+             "Analista: 5 votos bull/bear, a equipa de risco (mint e freeze revogados, top 10 < 25%, sem honeypot, há vendas) e a rota Jupiter (até 2% de impacto). Nota de 0 a 100",
+             "Compounder: cada compra é 40% do saldo livre, no máximo 2 abertas, nunca reforça uma moeda",
+             "Executor: a melhor nota primeiro, 1 compra a cada 2 min, ao preço de uma cotação real da Jupiter mais 0,5% de custos",
+             "Risco, a cada 5 s: stop −8% enquanto não chega a 2×; a 2× vende metade (a entrada volta); o resto sai com trailing de 10% abaixo do máximo",
+             "Tudo em papel: nenhuma carteira, nenhuma ordem real"]
     repos = [{"agent": a, "repo": memedesk.REPOS[a][0], "role": memedesk.REPOS[a][1]} for a in memedesk.AGENTS]
     if os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY"):
         rules.insert(2, "GMGN (chave tua): moedas em alta da GMGN, smart money e KOLs no SMARTS, rug score, wash trading e bots na equipa de risco")
     base = {"durations": list(DURATIONS), "stakes": list(STAKES), "rules": rules, "running": running, "repos": repos,
-            "venues": list(VENUES), "gmgn_key": bool(os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY"))}
+            "venues": list(VENUES), "gmgn_key": bool(os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY")),
+            "cards": CARDS, "params": {"stop_pct": 0.08, "half_at": memedesk.HALF_AT, "trail_pct": 0.10,
+                                       "stack_pct": 0.40, "max_open": 2, "goal_mult": 10}}
     if not st:
         return {**base, "exists": False, "status": "idle", "positions": [], "trades": [], "log": [], "curve": [],
                 "ticker": [], "start_eur": 1000.0, "equity_eur": 1000.0}
     rate = st.get("eur_usd") or 1.0
     cost = st["p"]["cost_per_side"]
-    positions = [{"symbol": q["coin"], "name": q["name"], "side": "", "value_eur": q["qty"] * q["last"] * (1 - cost) / rate,
-                  "pnl_eur": (q["qty"] * q["last"] * (1 - cost) - q["cost_usd"]) / rate,
-                  "pct": q["qty"] * q["last"] * (1 - cost) / q["cost_usd"] - 1, "entry": q["raw_entry"],
-                  "last": q["last"], "stop": q["raw_entry"] * (1 - st["p"]["stop_pct"]), "trail_on": q["trail_on"],
-                  "opened": q["opened"], "mint": q.get("mint")} for q in st.get("positions", [])]
-    trades = [{"symbol": t["coin"], "side": "", "pnl_eur": t["pnl_eur"], "pct": t["pct"], "why": t["reason"],
-               "closed": t["closed"], "peak": t.get("peak_move"), "mint": t.get("mint")}
+    trail = st["p"].get("trail_pct", 0.10)
+    positions = []
+    for q in st.get("positions", []):
+        value = q["qty"] * q["last"] * (1 - cost)
+        half = q.get("half_done", False)
+        positions.append({"id": q["id"], "symbol": q["coin"], "name": q["name"].split(" / ")[0], "side": "",
+                          "value_eur": value / rate, "cost_eur": q["cost_usd"] / rate,
+                          "pnl_eur": (value - q["cost_usd"]) / rate, "pct": value / q["cost_usd"] - 1 if q["cost_usd"] else 0,
+                          "mult": q["last"] / q["raw_entry"], "entry": q["raw_entry"], "last": q["last"], "peak": q["peak"],
+                          "stop": None if half else q["raw_entry"] * (1 - st["p"]["stop_pct"]),
+                          "trail": q["peak"] * (1 - trail) if half else None, "trail_on": q["trail_on"],
+                          "half_done": half, "half_px": q.get("half_px"), "half_ts": q.get("half_ts"),
+                          "opened": q["opened"], "mint": q.get("mint"), "img": q.get("img", ""), "mcap": q.get("mcap", 0),
+                          "created": q.get("created", ""), "score": q.get("score"), "series": _series(q.get("series"))})
+    trades = [{"id": t.get("id"), "symbol": t["coin"], "side": "", "pnl_eur": t["pnl_eur"], "pct": t["pct"],
+               "why": t["reason"], "kind": t.get("kind", "end"), "mult": t.get("mult"), "closed": t["closed"],
+               "opened": t.get("opened"), "peak": t.get("peak_move"), "mint": t.get("mint"), "img": t.get("img", ""),
+               "entry": t.get("entry"), "exit": t.get("exit"), "half_px": t.get("half_px"), "half_ts": t.get("half_ts"),
+               "mcap": t.get("mcap"), "created": t.get("created"), "score": t.get("score"),
+               "series": _series(t.get("series"), 80)}
               for t in st.get("trades", [])][::-1]
     events = st.get("events", [])
     seen, ticker = set(), []
@@ -330,8 +345,21 @@ def _memes() -> dict:
             "ready": st.get("ready", []), "pools_seen": st.get("pools_seen", 0),
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap,
             "mode": st.get("mode", "classic"), "agents": st.get("agents", {}),
-            "venue": st.get("venue") or "gmgn", "feeds": st.get("feeds", {}),
+            "venue": st.get("venue") or "gmgn", "feeds": st.get("feeds", {}), "cash_eur": st.get("cash", 0) / rate,
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
+
+
+CARDS = [{"key": "SCANNER", "name": "Scanner"}, {"key": "ANALYST", "name": "Analista"},
+         {"key": "COMPOUNDER", "name": "Compounder"}, {"key": "EXECUTOR", "name": "Executor"},
+         {"key": "RISK", "name": "Risco"}]
+
+
+def _series(points, n: int = 150) -> list:
+    points = points or []
+    if len(points) <= n:
+        return points
+    step = len(points) / n
+    return [points[int(i * step)] for i in range(n)] + [points[-1]]
 
 
 def _env_has(key: str) -> bool:
@@ -345,16 +373,18 @@ def _env_has(key: str) -> bool:
 def _perps() -> dict:
     from . import perpdesk
     p = perpdesk.PerpParams()
-    rules = [f"TRENDS: os {p.universe} perpétuos mais negociados da Hyperliquid; velas de 15 min, EMA 20 e 50 no mesmo sentido; corta quem já correu 3 ATR numa hora",
-             f"SMARTS: os {p.traders} melhores traders do leaderboard público da Hyperliquid (contas de $1M+, a ganhar no mês e desde sempre); precisa de {p.min_traders}+ do nosso lado e mais dinheiro do nosso lado",
-             "DEBATE: 5 votos bull/bear (tendência de 1 h, RSI, funding, volume, VWAP do dia) e a equipa de risco (ATR entre 0,15% e 3%); precisa de 4 votos",
-             "ROUTER: livro de ordens da Hyperliquid; spread até 0,05% e preço de entrada a menos de 0,10% do meio",
-             "EXEC: margem de 15% do saldo à alavancagem da sessão (máx. 10x), no máx. 4 posições; preço a cada 5 s; stop 1,5 ATR, trailing a partir de +2 ATR, liquidação, funding à hora, taxa 0,045%",
-             "CORE: só abre quando os 5 concordam. Tudo em papel: a INVO não tem API pública, nenhuma ordem real"]
+    rules = [f"Scanner: os {p.universe} perpétuos mais negociados da Hyperliquid, velas de 15 min com EMA 20 e 50 no mesmo sentido; depois os {p.traders} melhores traders do leaderboard público ({p.min_traders}+ do nosso lado e mais dinheiro do nosso lado)",
+             "Analista: 5 votos bull/bear (tendência de 1 h, RSI, funding, volume, VWAP do dia), a equipa de risco (ATR entre 0,15% e 3%) e o livro de ordens (spread até 0,05%). Nota de 0 a 100",
+             "Compounder: margem de 40% do saldo livre à alavancagem da sessão (máx. 10x), no máximo 2 abertas",
+             "Executor: a melhor nota primeiro, 1 abertura a cada 2 min, preenche no livro de ordens com taxa de 0,045%",
+             "Risco, a cada 5 s: stop 1,5 ATR; a 2R (o dobro do risco) fecha metade e o stop vai para a entrada; o resto sai com trailing de 1,5 ATR; liquidação e funding à hora",
+             "Tudo em papel: a INVO não tem API pública, nenhuma ordem real"]
     repos = [{"agent": a, "repo": perpdesk.REPOS[a][0], "role": perpdesk.REPOS[a][1]} for a in perpdesk.AGENTS]
     running = perp_running()
     base = {"durations": list(DURATIONS), "stakes": list(STAKES), "levs": list(LEVERAGES), "rules": rules,
-            "running": running, "repos": repos, "venues": ["invo"], "venue": "invo"}
+            "running": running, "repos": repos, "venues": ["invo"], "venue": "invo", "cards": CARDS,
+            "params": {"stop_atr": p.stop_atr, "half_r": p.half_r, "trail_atr": p.trail_atr, "stack_pct": p.margin_pct,
+                       "max_open": p.max_positions, "goal_mult": 10}}
     try:
         st = json.loads((PERP_DIR / "state.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -366,12 +396,20 @@ def _perps() -> dict:
     positions = []
     for q in st.get("positions", []):
         pnl = q["side"] * q["qty"] * (q["last"] - q["entry"]) - q.get("funding", 0)
-        positions.append({"symbol": q["coin"], "name": q["coin"], "side": "long" if q["side"] == 1 else "short",
-                          "lev": q["lev"], "value_eur": max(0.0, q["margin"] + pnl) / rate, "pnl_eur": pnl / rate,
-                          "pct": pnl / q["margin"] if q["margin"] else 0, "entry": q["entry"], "last": q["last"],
-                          "stop": q["stop"], "liq": q["liq"], "trail_on": q.get("trail_on"), "opened": q["opened"]})
-    trades = [{"symbol": t["coin"], "side": t["side"], "lev": t.get("lev"), "pnl_eur": t["pnl_eur"], "pct": t["pct"],
-               "why": t["reason"], "closed": t["closed"]} for t in st.get("trades", [])][::-1]
+        trail = q["peak"] - q["side"] * p.trail_atr * q["atr"] if q.get("half_done") else None
+        positions.append({"id": q["id"], "symbol": q["coin"], "name": q["coin"], "side": "long" if q["side"] == 1 else "short",
+                          "lev": q["lev"], "value_eur": max(0.0, q["margin"] + pnl) / rate, "cost_eur": q["margin"] / rate,
+                          "pnl_eur": pnl / rate, "pct": pnl / q["margin"] if q["margin"] else 0,
+                          "mult": (q["margin"] + pnl) / q["margin"] if q["margin"] else 1, "entry": q["entry"],
+                          "last": q["last"], "peak": q["peak"], "stop": q["stop"], "liq": q["liq"], "trail": trail,
+                          "trail_on": q.get("trail_on"), "half_done": q.get("half_done", False),
+                          "half_px": q.get("half_px"), "half_ts": q.get("half_ts"), "opened": q["opened"],
+                          "atr": q["atr"], "score": q.get("score"), "series": _series(q.get("series"))})
+    trades = [{"id": t.get("id"), "symbol": t["coin"], "side": t["side"], "lev": t.get("lev"), "pnl_eur": t["pnl_eur"],
+               "pct": t["pct"], "why": t["reason"], "kind": t.get("kind", "end"), "mult": t.get("mult"),
+               "closed": t["closed"], "opened": t.get("opened"), "entry": t.get("entry"), "exit": t.get("exit"),
+               "half_px": t.get("half_px"), "half_ts": t.get("half_ts"), "score": t.get("score"),
+               "series": _series(t.get("series"), 80)} for t in st.get("trades", [])][::-1]
     eq = st.get("equity_eur", st.get("start_eur"))
     recap = None
     if (bool(st.get("finished")) or not running) and st.get("started"):
@@ -384,13 +422,14 @@ def _perps() -> dict:
                  "best": best and {"symbol": best["symbol"], "pnl_eur": best["pnl_eur"]},
                  "worst": worst and {"symbol": worst["symbol"], "pnl_eur": worst["pnl_eur"]},
                  "started": st["started"], "ended": st["ends"], "win_rate": len(wins) / len(trades) if trades else None,
-                 "stop_txt": f"stop {p.stop_atr:g} ATR · {st.get('lev', 5):g}x"}
+                 "stop_txt": f"Compounder 40% · metade a 2R · stop {p.stop_atr:g} ATR · {st.get('lev', 5):g}x".replace(".", ",")}
     return {**base, "exists": True, "status": "live" if running else "finished", "started": st["started"],
             "ends": st["ends"], "start_eur": st["start_eur"], "equity_eur": eq, "positions": positions,
             "trades": trades, "log": st.get("events", [])[-80:][::-1], "ticker": st.get("ticker", []),
             "counts": st.get("counts", {}), "ready": st.get("ready", []), "pools_seen": st.get("coins_seen", 0),
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap, "mode": "futuros",
             "agents": st.get("agents", {}), "feeds": st.get("feeds", {}), "lev": st.get("lev", 5),
+            "cash_eur": st.get("cash", 0) / rate,
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
 
 
