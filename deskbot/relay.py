@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+from dotenv import load_dotenv
 
 from .config import ROOT, env
 
@@ -39,6 +40,7 @@ POINTS = 400   # chart points sent to the phone per desk
 
 class Relay:
     def __init__(self):
+        load_dotenv(ROOT / ".env")   # also when used outside the dashboard (never overrides real env vars)
         self.url = (env("RELAY_URL") or DEFAULT_URL).rstrip("/")
         self.key = env("RELAY_KEY") or DEFAULT_KEY
         self.secret = env("RELAY_SECRET")
