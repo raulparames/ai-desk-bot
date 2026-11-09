@@ -53,6 +53,12 @@ SHIM = """<script>
         if (r.ok) { cache.items = {}; cache.since = null; }
         return reply(r.status, j);
       }
+      if (path === "/api/push/subscribe") {   // lock-screen notifications: the Supabase function keeps the subscription
+        const r = await realFetch(URL + "/functions/v1/push", {method: "POST", headers: H, body: JSON.stringify(Object.assign({}, body, {token: tok()}))});
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { const e = new Error("login"); e.code = 401; throw e; }
+        return reply(r.status, j);
+      }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {
           const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));
@@ -97,8 +103,8 @@ def main():
     terminal = rewrite((STATIC / "memes.html").read_text(encoding="utf-8"))
     (OUT / "memes.html").write_text(terminal, encoding="utf-8")
     (OUT / "perps.html").write_text(terminal, encoding="utf-8")   # same terminal; it picks the mode from its name
-    for icon in ("icon-180.png", "icon-512.png"):
-        shutil.copy(STATIC / icon, OUT / icon)
+    for name in ("icon-180.png", "icon-512.png", "sw.js"):   # sw.js: lock-screen notifications
+        shutil.copy(STATIC / name, OUT / name)
     manifest = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     manifest.update(start_url="./index.html", scope="./")
     for i in manifest["icons"]:

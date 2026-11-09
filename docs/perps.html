@@ -280,6 +280,11 @@ a{color:inherit;text-decoration:none}
       <div class="btns"><button class="btn" id="b-recap" type="button">Resumo da última sessão</button></div>
     </div>
     <div class="panel"><h3>Regras</h3><ul class="rlist" id="acc-rules"></ul></div>
+    <div class="panel" id="push-panel"><h3>Notificações no ecrã bloqueado</h3>
+      <p class="cuts" id="push-text">Cada compra e venda das mesas aparece no ecrã bloqueado, como uma mensagem.</p>
+      <div class="btns"><button class="btn primary" id="push-on" type="button">Ativar</button><button class="btn" id="push-off" type="button" hidden>Desligar</button></div>
+      <p class="cuts" id="push-state" role="status"></p>
+    </div>
     <div class="panel"><h3>Dados</h3><div class="kv" id="acc-feeds"></div></div>
     <div class="links" id="acc-links"></div>
     <p class="note">Tudo em papel: nenhuma carteira, nenhuma ordem real. Comprar ou vender nas apps é dinheiro real e decisão tua; esta mesa nunca o faz por ti.</p>
@@ -342,6 +347,12 @@ a{color:inherit;text-decoration:none}
         const r = await realFetch(URL + "/functions/v1/login", {method: "POST", headers: H, body: JSON.stringify({password: body.password})});
         const j = await r.json().catch(() => ({}));
         if (r.ok) { cache.items = {}; cache.since = null; }
+        return reply(r.status, j);
+      }
+      if (path === "/api/push/subscribe") {   // lock-screen notifications: the Supabase function keeps the subscription
+        const r = await realFetch(URL + "/functions/v1/push", {method: "POST", headers: H, body: JSON.stringify(Object.assign({}, body, {token: tok()}))});
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { const e = new Error("login"); e.code = 401; throw e; }
         return reply(r.status, j);
       }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
@@ -708,6 +719,7 @@ function renderAgents(d) {
 
 /* ---------------------------------------------------------------- account tab */
 function renderAccount(d) {
+  if (!S.pushChecked) { S.pushChecked = true; pushRefresh(); }
   const running = !!d.running, P = d.params || {};
   $("#acc-state").textContent = running ? "a correr" : "parada";
   $("#acc-kv").innerHTML = [
@@ -938,6 +950,57 @@ function openRecap() {
     <button class="go" id="re-new" type="button">Nova sessão</button></div>`);
   $("#re-new").onclick = openConnect;
 }
+
+/* ---------------------------------------------------------------- lock-screen notifications (Web Push) */
+const VAPID_PUBLIC = "BA2OTHuaQ8SfVrER8l_18Emkeg9s9g9e6rR9pgvH9KR5AS4A4MwONdlVAjJkWdUuO7XeJq0fn4wWqw6rEK-0p2U";
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const STANDALONE = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && window.isSecureContext;
+function b64uBytes(s) { const p = "=".repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+function pushState(text, on) {
+  $("#push-state").textContent = text || "";
+  $("#push-on").hidden = !!on; $("#push-off").hidden = !on;
+}
+async function pushRefresh() {
+  if (IOS && !STANDALONE) {
+    $("#push-text").textContent = "No iPhone só funciona na app do ecrã principal (iOS 16.4 ou mais recente): no Safari, toca em Partilhar → Adicionar ao ecrã principal e abre a app a partir de lá.";
+    $("#push-on").hidden = true; $("#push-off").hidden = true; return;
+  }
+  if (!pushSupported()) {
+    $("#push-text").textContent = window.isSecureContext ? "Este browser não suporta notificações." : "Só funciona na versão online da app (https), não pelo Wi-Fi de casa.";
+    $("#push-on").hidden = true; $("#push-off").hidden = true; return;
+  }
+  if (Notification.permission === "denied") { pushState("Bloqueadas: liga-as nas Definições do telemóvel (Notificações → AI Desk Bot).", false); $("#push-on").hidden = true; return; }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    pushState(sub ? "Ligadas ✓ neste aparelho." : "Desligadas.", !!sub);
+  } catch (e) { pushState("Desligadas.", false); }
+}
+async function pushSend(sub, action) {
+  await api("/api/push/subscribe", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({subscription: sub.toJSON(), action})});
+}
+$("#push-on").onclick = async () => {
+  const btn = $("#push-on"); btn.disabled = true;
+  try {
+    const perm = await Notification.requestPermission();   // must stay inside the tap on iOS
+    if (perm !== "granted") { pushState(perm === "denied" ? "Bloqueadas: liga-as nas Definições do telemóvel." : "Não foram autorizadas.", false); return; }
+    const reg = await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64uBytes(VAPID_PUBLIC)});
+    await pushSend(sub, "subscribe");
+    pushState("Ligadas ✓ Vais receber uma notificação de teste dentro de um minuto.", true);
+  } catch (e) { pushState("Não deu para ligar: " + (e.message || e), false); }
+  finally { btn.disabled = false; }
+};
+$("#push-off").onclick = async () => {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) { try { await pushSend(sub, "unsubscribe"); } catch (e) {} await sub.unsubscribe(); }
+    pushState("Desligadas.", false);
+  } catch (e) { pushState("Não deu para desligar: " + (e.message || e), true); }
+};
 
 /* ---------------------------------------------------------------- start */
 route();

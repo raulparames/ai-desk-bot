@@ -235,6 +235,12 @@ a{color:inherit;text-decoration:none}
         if (r.ok) { cache.items = {}; cache.since = null; }
         return reply(r.status, j);
       }
+      if (path === "/api/push/subscribe") {   // lock-screen notifications: the Supabase function keeps the subscription
+        const r = await realFetch(URL + "/functions/v1/push", {method: "POST", headers: H, body: JSON.stringify(Object.assign({}, body, {token: tok()}))});
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { const e = new Error("login"); e.code = 401; throw e; }
+        return reply(r.status, j);
+      }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {
           const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));

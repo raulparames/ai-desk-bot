@@ -6,3 +6,4 @@ pydantic>=2.5
 anthropic>=0.60
 pytest>=8.0
 segno>=1.6
+pywebpush==2.0.3

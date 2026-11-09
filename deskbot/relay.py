@@ -199,6 +199,8 @@ def pc_loop(stop: threading.Event | None = None):
         log.exception("Relay start failed (will keep trying)")
     pw_mtime = _mtime(ROOT / "phone_password.json")
     last_files = 0.0
+    from .push import Pusher
+    pusher = Pusher(relay)   # lock-screen notifications for the memes and futures sessions
     while not stop.is_set():
         tick = time.time()
         try:
@@ -211,6 +213,10 @@ def pc_loop(stop: threading.Event | None = None):
                 if time.time() - last_files > 30:
                     relay.push_files()
                     last_files = time.time()
+                try:
+                    pusher.tick()
+                except Exception as exc:   # a failed notification must never stop the relay
+                    log.warning("Push tick failed: %s", exc)
             m = _mtime(ROOT / "phone_password.json")
             if m != pw_mtime:
                 relay.set_password_from_file()
@@ -276,6 +282,9 @@ def _gh_session(relay: Relay, session: dict):
     done = threading.Event()
     _GH_KIND["desk"] = "perps" if session.get("desk") == "perps" else "memes"
     _GH_SESSION.set()
+    from .push import Pusher
+    notes = Pusher(relay)
+    _safe(notes.tick)        # first look: whatever is already in the files is not announced
 
     def pusher():
         while not done.wait(5):
@@ -287,6 +296,7 @@ def _gh_session(relay: Relay, session: dict):
                     relay.done(cmd["id"], run_command(cmd, "github"))
             except Exception as exc:
                 log.warning("session push failed: %s", exc)
+            _safe(notes.tick)
 
     t = threading.Thread(target=pusher, daemon=True)
     t.start()
@@ -298,6 +308,14 @@ def _gh_session(relay: Relay, session: dict):
         t.join(timeout=10)
         relay.push(app_items("github"), force=True)
         relay.push_files()
+        _safe(notes.tick)    # the last sells and the end of the session
+
+
+def _safe(fn):
+    try:
+        fn()
+    except Exception as exc:   # notifications must never stop a session
+        log.warning("Push tick failed: %s", exc)
 
 
 def _mtime(p: Path) -> float:

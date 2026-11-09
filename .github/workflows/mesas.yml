@@ -29,4 +29,5 @@ jobs:
       - run: python -m deskbot gh-cycle
         env:
           RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}   # lock-screen notifications (empty = none sent)
           DESKBOT_SHORT_HISTORY: "1"

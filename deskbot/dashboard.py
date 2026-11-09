@@ -850,6 +850,20 @@ class App:
         log.info("Phone logged in with the password from %s", ip)
         return 200, {"token": phone.token()}
 
+    def push_subscribe(self, body: dict) -> tuple[int, dict]:
+        """The phone (or this PC's browser) turns lock-screen notifications on or off."""
+        from . import push
+        from .relay import Relay
+        sub = push.clean_sub(body.get("subscription") or {})
+        if not sub:
+            return 400, {"error": "subscrição inválida"}
+        relay = Relay()
+        if not relay.enabled:
+            return 503, {"error": "a ponte (relay) não está configurada neste PC"}
+        gone = body.get("action") == "unsubscribe"
+        relay.push({push.sub_key(sub["endpoint"]): {"gone": True, "at": sub["at"]} if gone else sub})
+        return 200, {"ok": True, "on": not gone}
+
     def set_phone_password(self, body: dict) -> tuple[int, dict]:
         try:
             phone.set_password(body.get("password"))
@@ -911,6 +925,7 @@ class Handler(BaseHTTPRequestHandler):
                     "/app": ("app.html", "text/html; charset=utf-8"),
                     "/memes": ("memes.html", "text/html; charset=utf-8"),
                     "/perps": ("memes.html", "text/html; charset=utf-8"),   # same terminal, futures mode
+                    "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),   # lock-screen notifications
                     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
                     "/icon-180.png": ("icon-180.png", "image/png"),
                     "/icon-512.png": ("icon-512.png", "image/png")}
@@ -965,6 +980,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                              float(b.get("eur") or 110),
                                                                              float(b.get("lev") or 5)),
                    "/api/desk/perps/stop": lambda b: desks_api.stop_perps(),
+                   "/api/push/subscribe": self.app.push_subscribe,
                    "/api/login": lambda b: self.app.login(self._client_ip(), b)}
         if path not in actions:
             return self._json(404, {"error": "not found"})

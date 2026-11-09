@@ -468,3 +468,70 @@ def test_compounder_sizes_40pct_of_free_cash_sells_half_at_2x_then_trails(monkey
     desk._apply_risk(live(2.6, 0.91), False)           # more than 10% off 3.0
     assert a not in desk.d.positions and desk.d.trades[-1]["kind"] == "trail"
     assert {e["agent"] for e in desk.d.events if e["verdict"] == "sell"} == {"RISK"}
+
+
+def test_push_only_to_real_push_services_and_texts():
+    from deskbot import push
+    assert push.push_host_ok("https://web.push.apple.com/QGx1")
+    assert push.push_host_ok("https://fcm.googleapis.com/fcm/send/x")
+    assert push.push_host_ok("https://wns2-db5p.notify.windows.com/w/?token=x")
+    for bad in ("http://web.push.apple.com/x", "https://evil.example.com/x", "https://web.push.apple.com.evil.com/x",
+                "https://evilpush.apple.com/x", "not a url"):
+        assert not push.push_host_ok(bad), bad
+    keys = {"p256dh": "B" + "x" * 86, "auth": "a" * 22}
+    assert push.clean_sub({"endpoint": "https://web.push.apple.com/abc", "keys": keys})["keys"] == keys
+    assert push.clean_sub({"endpoint": "https://example.com/abc", "keys": keys}) is None
+    buy = push.message("memes", {"verdict": "buy", "coin": "$FLINT", "eur": 21.36, "score": 81, "ts": "t"}, "GMGN")
+    assert buy["title"] == "Comprou $FLINT · 21,36 €" and "na GMGN (papel)" in buy["body"]
+    assert buy["url"] == "memes.html#/moeda/%24FLINT"
+    half = push.message("memes", {"verdict": "sell", "kind": "half", "coin": "$W", "pnl_eur": 20.14, "ts": "t"}, "GMGN")
+    assert half["title"] == "Vendeu metade de $W · +20,14 €" and "entrada voltou" in half["body"]
+    stop = push.message("perps", {"verdict": "sell", "kind": "stop", "coin": "SOL", "pnl_eur": -1.31, "ts": "t"}, "INVO")
+    assert stop["title"] == "Parou SOL · −1,31 €"
+
+
+def test_pusher_announces_only_new_trades_once(monkeypatch, tmp_path):
+    """First look announces nothing old; a new buy goes out once; what the other runner already sent is skipped."""
+    import json as _json
+    import pywebpush
+    from deskbot import push
+    sent = []
+    monkeypatch.setattr(pywebpush, "webpush", lambda **kw: sent.append(_json.loads(kw["data"])))
+    state = tmp_path / "memes.json"
+    monkeypatch.setattr(push, "DESKS", {"memes": state})
+    ev = lambda ts, coin: {"ts": ts, "agent": "EXECUTOR", "coin": coin, "verdict": "buy", "eur": 10, "score": 70}
+    write = lambda events, **kw: state.write_text(_json.dumps({"events": events, "venue": "fomo", "started": "s1", **kw}))
+
+    class FakeRelay:
+        enabled = True
+        def __init__(self):
+            self.kv = {"push:sub:aaa": {"value": {"endpoint": "https://web.push.apple.com/a", "keys": {"p256dh": "B" * 87, "auth": "a" * 22}}}}
+        def get(self, prefix):
+            return {k: v for k, v in self.kv.items() if k.startswith(prefix)}
+        def push(self, items):
+            self.kv.update({k: {"value": v} for k, v in items.items()})
+
+    relay = FakeRelay()
+    p = push.Pusher(relay)
+    p.key = "test"
+    write([ev("2026-11-09T10:00:00+00:00", "$OLD")])
+    p.tick()
+    assert sent == []                                   # first look: old trades and old phones stay quiet
+    write([ev("2026-11-09T10:00:00+00:00", "$OLD"), ev("2026-11-09T10:05:00+00:00", "$NEW")])
+    p.tick()
+    assert [m["title"] for m in sent] == ["Comprou $NEW · 10,00 €"] and "na FOMO" in sent[0]["body"]
+    p.tick()
+    assert len(sent) == 1                               # never twice
+    other = push.Pusher(relay)                          # e.g. GitHub after the PC: it sees the same file
+    other.key = "test"
+    other.seen = {"memes": "2026-11-09T10:00:00+00:00"}
+    other.ended = {"memes": ""}
+    other.tick()
+    assert len(sent) == 1                               # already announced by the first runner
+    relay.kv["push:sub:bbb"] = {"value": {"endpoint": "https://fcm.googleapis.com/x", "keys": {"p256dh": "B" * 87, "auth": "a" * 22}}}
+    p.subs_at = 0
+    write([ev("2026-11-09T10:05:00+00:00", "$NEW")], finished=True, start_eur=110, equity_eur=121, trades=[{}, {}])
+    p.tick()
+    titles = [m["title"] for m in sent[1:]]
+    assert titles[0] == "Notificações ligadas ✓"        # the new phone gets a first one
+    assert any(t.startswith("Sessão de memes terminou · 121,00 €") for t in titles)
