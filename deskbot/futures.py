@@ -16,6 +16,7 @@ Data: Binance USD-M futures public API (klines, funding history), cached in data
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -53,16 +54,35 @@ class FutParams:
 
 
 # ------------------------------------------------------------------ data
-def _get(path: str, params: dict):
+SPOT = "https://data-api.binance.vision/api/v3"   # public mirror, reachable where the futures API is not
+
+
+class Blocked(Exception):
+    """The futures API refuses this machine's country (451/403), e.g. GitHub's US runners."""
+
+
+def _get(path: str, params: dict, base: str = FAPI):
     for attempt in range(3):
         try:
-            r = requests.get(FAPI + path, params=params, timeout=20)
+            r = requests.get(base + path, params=params, timeout=20)
+            if r.status_code in (451, 403):
+                raise Blocked(f"{r.status_code} {base}{path}")
             r.raise_for_status()
             return r.json()
         except requests.RequestException:
             if attempt == 2:
                 raise
             time.sleep(1.5 * (attempt + 1))
+
+
+def _klines_batch(symbol: str, since: int) -> list:
+    """Futures candles; spot candles of the same coin when the futures API is blocked here
+    (perpetuals track spot within a fraction of a percent)."""
+    params = {"symbol": symbol, "interval": f"{BAR_H}h", "startTime": since}
+    try:
+        return _get("/klines", {**params, "limit": 1500})
+    except Blocked:
+        return _get("/klines", {**params, "limit": 1000}, base=SPOT)
 
 
 def klines(symbol: str, start: str = "2020-01-01", refresh: bool = True) -> pd.DataFrame:
@@ -75,11 +95,11 @@ def klines(symbol: str, start: str = "2020-01-01", refresh: bool = True) -> pd.D
         since = int((df.index[-1] if not df.empty else pd.Timestamp(start)).timestamp() * 1000)
         rows = []
         while True:
-            batch = _get("/klines", {"symbol": symbol, "interval": f"{BAR_H}h", "startTime": since, "limit": 1500})
+            batch = _klines_batch(symbol, since)
             if not batch:
                 break
             rows += batch
-            if len(batch) < 1500:
+            if len(batch) < 1000:
                 break
             since = batch[-1][0] + 1
         if rows:
@@ -276,6 +296,15 @@ class FuturesDesk:
                 if item["symbol"] in SYMBOLS:
                     out[item["symbol"]] = float(item["markPrice"])
                     self.L.extra.setdefault("funding_now", {})[item["symbol"]] = float(item["lastFundingRate"])
+            self.L.extra["data_source"] = "futuros Binance"
+        except Blocked:
+            # the futures API is blocked on this machine (GitHub's US runners): spot prices, last known funding
+            try:
+                for item in _get("/ticker/price", {"symbols": json.dumps(list(SYMBOLS), separators=(",", ":"))}, base=SPOT):
+                    out[item["symbol"]] = float(item["price"])
+                self.L.extra["data_source"] = "spot Binance (API de futuros bloqueada aqui)"
+            except (requests.RequestException, KeyError, ValueError, Blocked) as exc:
+                log.warning("spot prices failed too: %s", exc)
         except (requests.RequestException, KeyError, ValueError) as exc:
             log.warning("futures prices failed: %s", exc)
         return out
