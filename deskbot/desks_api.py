@@ -271,7 +271,7 @@ def _memes() -> dict:
              "Risk: preço a cada 15 s; stop -6%, trailing a partir de +20% que vende 12% abaixo do máximo",
              "Custos de 1% por lado mais o impacto no pool; no fim da sessão vende tudo ao último preço"]
     from . import memedesk
-    rules = ["Scanner: pools em alta e moedas que saíram do pump.fun; corta liquidez < $40 000, +80% numa hora e pools com menos de 10 min. Depois as baleias: 3 compras de $500+ em 30 min e mais compras do que vendas",
+    rules = ["Scanner: a cada minuto lê cerca de 300 tokens da Solana (listas da Jupiter, pools em alta e moedas que saíram do pump.fun); corta liquidez < $40 000, +80% numa hora, mint ou freeze ativos e moedas com menos de 10 min. As 2 melhores seguem; depois as baleias: 3 compras de $500+ em 30 min e mais compras do que vendas",
              "Analista: 5 votos bull/bear, a equipa de risco (mint e freeze revogados, top 10 < 25%, sem honeypot, há vendas) e a rota Jupiter (até 2% de impacto). Nota de 0 a 100",
              "Compounder: cada compra é 40% do saldo livre, no máximo 2 abertas, nunca reforça uma moeda",
              "Executor: a melhor nota primeiro, 1 compra a cada 2 min, ao preço de uma cotação real da Jupiter mais 0,5% de custos",

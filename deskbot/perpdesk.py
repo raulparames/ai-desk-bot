@@ -257,7 +257,7 @@ class PerpDesk:
         rows.sort(reverse=True)
         coins = [n for v, n in rows if v >= self.p.min_volume][:self.p.universe]
         self.d.ticker = [{"symbol": n, "pct": self.meta[n]["day_pct"]} for n in coins[:14]]
-        self.d.coins_seen = len(coins)
+        self.d.coins_seen = len(rows)        # every perp read; the 25 most traded go on
         return coins
 
     def load_crowd(self):

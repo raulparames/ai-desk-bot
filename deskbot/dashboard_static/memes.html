@@ -555,7 +555,7 @@ function agentCard(a, d, wide = false, extra = "") {
   const P = d.params || {};
   let sub = "", subColor = "var(--t2)", body = "";
   if (a === "SCANNER") {
-    sub = `${nf(0).format(d.pools_seen || 0)} ${PERPS ? "pares" : "pools"}`; subColor = "#5fb8ff";
+    sub = `${nf(0).format(d.pools_seen || 0)} ${PERPS ? "pares" : "tokens"}`; subColor = "#5fb8ff";
     const seen = new Set(), rows = [];
     for (const e of d.log || []) {
       if (e.agent !== "SCANNER" || e.verdict === "wait" || seen.has(e.coin)) continue;

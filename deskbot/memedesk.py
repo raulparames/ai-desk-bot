@@ -6,6 +6,11 @@ Compounder rules, as in the video: every buy is 40% of the free cash, never more
 to a coin already held. At 2x half is sold (the entry comes back); the rest rides a trailing stop 10%
 off its high. Until 2x prints there is a hard stop at -8%.
 
+Wide scan: every minute SCANNER also reads Jupiter's token lists (top trending, top traded, top organic
+score, newest: about 300 Solana tokens) and applies the TRENDS cuts to all of them with Jupiter's own
+numbers (liquidity, 1 h move, age, mint and freeze, size). The best two that pass, by Jupiter's organic
+score, become GeckoTerminal pools for the other agents. The app counts every token actually read.
+
 Steps inside the agents (originally laid out like the "gmgn mode" video):
 
     python -m deskbot memedesk --minutes 720 --eur 110
@@ -53,6 +58,10 @@ log = logging.getLogger("memetest")
 SOL_MINT = "So11111111111111111111111111111111111111112"
 JUP_QUOTE = "https://lite-api.jup.ag/swap/v1/quote"
 JUP_PRICE = "https://lite-api.jup.ag/price/v3"
+JUP_TOKENS = "https://lite-api.jup.ag/tokens/v2"
+WIDE_LISTS = ("toptrending/5m", "toptraded/5m", "toporganicscore/5m", "toptrending/1h", "recent")
+WIDE_FORWARD = 2          # best wide-scan tokens sent on to the other agents per scan
+MAX_MCAP = 50e6           # bigger than this is not a memecoin play any more
 AGENTS = ("SCANNER", "ANALYST", "COMPOUNDER", "EXECUTOR", "RISK")
 STAGES = ("TRENDS", "SMARTS", "DEBATE", "ROUTER", "EXEC")
 AGENT_OF = {"TRENDS": "SCANNER", "SMARTS": "SCANNER", "DEBATE": "ANALYST", "ROUTER": "ANALYST", "CORE": "ANALYST",
@@ -94,6 +103,9 @@ class MemesDesk(MemeTest):
         self.gmgn = Gmgn()
         self._gm: dict[str, dict] = {}          # mint -> GMGN numbers from its trending row
         self._gm_done: set[str] = set()         # GMGN coins already looked up on GeckoTerminal
+        self._mints_seen: set[str] = set()      # every token the scanner really read (the app's counter)
+        self._wide_verdict: dict[str, str] = {}  # mint -> last wide-scan cut (counted once per change)
+        self._wide_done: set[str] = set()       # wide-scan tokens already sent on
         self.d.feeds = {"gmgn": self.gmgn.status()}
         self.d.counts = {k: {} for k in ("trends", "smarts", "debate", "router", "exec", "core")}
         self.d.agents = {a: {"coin": None, "text": "à espera", "ok": None, "ts": None} for a in AGENTS}
@@ -160,8 +172,11 @@ class MemesDesk(MemeTest):
             if pool["relationships"]["dex"]["data"]["id"] == "pumpswap":
                 found.setdefault(pool["attributes"]["address"], {**pool, "source": "saiu do pump.fun"})
         found.update(self._gmgn_pools(found))
+        known = {pool["relationships"]["base_token"]["data"]["id"].split("_", 1)[1] for pool in found.values()}
+        self._mints_seen.update(known)
+        found.update(self._wide(known))
         self.d.feeds["gmgn"] = self.gmgn.status()
-        self.d.pools_seen = len(set(self.d.seen) | set(found) | set(self.d.waiting))
+        self.d.pools_seen = len(self._mints_seen)
         for addr, pool in found.items():
             if addr in self.d.seen or any(p.pool == addr for p in self.d.positions):
                 continue
@@ -190,6 +205,74 @@ class MemesDesk(MemeTest):
                 top = max(pools, key=lambda p: _f(p["attributes"].get("reserve_in_usd")))
                 out[top["attributes"]["address"]] = {**top, "source": f"GMGN trending #{i + 1}"}
         return out
+
+    def _wide(self, known: set[str]) -> dict:
+        """About 300 tokens a minute from Jupiter's lists; TRENDS cuts on all of them; the best go on."""
+        toks: dict[str, dict] = {}
+        for path in WIDE_LISTS:
+            try:
+                r = self.http.get(f"{JUP_TOKENS}/{path}", params={"limit": 100}, timeout=15)
+                for t in (r.json() if r.ok else []):
+                    if isinstance(t, dict) and t.get("id"):
+                        toks.setdefault(t["id"], {**t, "_list": path})
+            except (requests.RequestException, ValueError):
+                self.d.api_errors += 1
+        self._mints_seen.update(toks)
+        passed, newly_cut = [], []
+        for mint, t in toks.items():
+            if mint in known or mint in self._wide_done:
+                continue
+            reason = self._wide_cut(t)
+            if not reason:
+                passed.append(t)
+                self._wide_verdict.pop(mint, None)
+                continue
+            if self._wide_verdict.get(mint) != reason:    # each token counted once per reason
+                self._wide_verdict[mint] = reason
+                newly_cut.append((t, reason))
+        # a couple of real cuts go on the app's Scanner card as events (event() counts those);
+        # the rest are only counted, not one event per token
+        shown = sorted((x for x in newly_cut if x[1] != "grande"), key=lambda x: -_f(x[0].get("organicScore")))[:2]
+        c = self.d.counts.setdefault("trends", {})
+        for t, reason in newly_cut:
+            if (t, reason) in shown:
+                self.event("TRENDS", "$" + str(t.get("symbol") or "?")[:12], "kill", reason, img=str(t.get("icon") or ""))
+            else:
+                c[reason.split(":")[0]] = c.get(reason.split(":")[0], 0) + 1
+        out = {}
+        for t in sorted(passed, key=lambda t: -_f(t.get("organicScore")))[:WIDE_FORWARD]:
+            mint = t["id"]
+            self._wide_done.add(mint)
+            d = self._gecko(f"/networks/solana/tokens/{mint}/pools", {"page": 1, "include": "base_token,dex"})
+            pools = (d or {}).get("data") or []
+            if pools:
+                top = max(pools, key=lambda p: _f(p["attributes"].get("reserve_in_usd")))
+                label = {"recent": "nova na Jupiter"}.get(t["_list"], "Jupiter " + t["_list"].replace("top", "top ").replace("/", " "))
+                out[top["attributes"]["address"]] = {**top, "source": label}
+        return out
+
+    def _wide_cut(self, t: dict) -> str:
+        """The TRENDS cuts, with Jupiter's own numbers (no extra calls)."""
+        sym = str(t.get("symbol") or "").upper()
+        if sym in M.MAJORS or _f(t.get("mcap")) > MAX_MCAP:
+            return "grande"
+        liq = _f(t.get("liquidity"))
+        if liq < self.p.min_liquidity:
+            return f"liquidez: ${liq / 1000:.0f}k < ${self.p.min_liquidity / 1000:.0f}k"
+        h1 = _f((t.get("stats1h") or {}).get("priceChange"))
+        if h1 > self.p.max_h1_pct:
+            return f"já correu: +{h1:.0f}% em 1h"
+        audit = t.get("audit") or {}
+        if audit.get("mintAuthorityDisabled") is False:
+            return "mint ativa"
+        if audit.get("freezeAuthorityDisabled") is False:
+            return "freeze ativo"
+        created = (t.get("firstPool") or {}).get("createdAt") or t.get("createdAt")
+        if created:
+            age = (_now() - datetime.fromisoformat(str(created).replace("Z", "+00:00"))).total_seconds() / 60
+            if age < self.p.min_age_min:
+                return f"muito nova: {age:.0f} min"
+        return ""
 
     def gm(self, mint: str) -> dict | None:
         """GMGN numbers for a coin: from its trending row if we saw one, else a fresh lookup."""
