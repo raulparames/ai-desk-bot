@@ -39,6 +39,16 @@ SHIM = """<script>
     return cache.items;
   }
   const val = (items, k) => (items[k] || {}).value;
+  /* How long ago the bot (PC or GitHub) last gave a sign, in seconds, by the SERVER's clock: the time of this
+     answer (j.now) minus the heartbeat (the moment the server took it, or else the one the bot wrote in it).
+     Never the phone's clock, which may be wrong. A computer asleep stops beating, and the pages say so. */
+  const ms = s => Date.parse(String(s || "").replace(new RegExp("([.][0-9]{3})[0-9]+"), "$1"));
+  function signal(items) {
+    const runner = Object.assign({}, val(items, "app:runner") || {});
+    const got = ms((items["app:runner"] || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(cache.since);
+    if (isFinite(beat) && isFinite(now)) runner.age_s = Math.max(0, Math.round((now - beat) / 1000));
+    return runner;
+  }
   const realFetch = window.fetch.bind(window);
   window.DESKBOT_REMOTE = true;
   window.fetch = async function (input, opts = {}) {
@@ -69,7 +79,7 @@ SHIM = """<script>
           return reply(202, {queued: true});
         }
         const items = await state();
-        const runner = val(items, "app:runner") || {};
+        const runner = signal(items);
         const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
         if (!data) return reply(503, {error: "Ainda sem dados do bot"});
         return reply(200, Object.assign({}, data, {runner}));

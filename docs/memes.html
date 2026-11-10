@@ -46,6 +46,12 @@ a{color:inherit;text-decoration:none}
 .conn{font-size:14px;color:var(--t2);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
 .conn b{color:var(--t1);font-weight:700}
 .conn .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.health{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.health:empty{display:none}
+.hrow{padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.35;background:var(--card-2);color:var(--t2)}
+.hrow b{color:var(--t1);font-weight:700}
+.hrow.bad{background:var(--red-dim);color:#ff8a8a}.hrow.bad b{color:var(--red)}
+.hrow.warn{background:rgba(255,200,61,.14);color:#ffd873}.hrow.warn b{color:var(--yellow)}
 
 /* balance */
 .bal{font:700 clamp(50px,14.5vw,66px)/1.02 var(--sans);letter-spacing:-.025em;margin-top:6px;white-space:nowrap}
@@ -256,6 +262,7 @@ details.raw pre{margin:6px 0 0;padding:10px;border-radius:12px;background:var(--
 
   <section id="v-home">
     <div class="conn" id="conn"></div>
+    <div class="health" id="health" role="status"></div>
     <div class="bal" id="bal"></div>
     <div class="chg" id="chg"></div>
     <div class="chart" id="chart"><canvas id="cv" role="img" aria-label="Saldo da sessão"></canvas><div class="marks" id="marks"></div></div>
@@ -342,6 +349,16 @@ details.raw pre{margin:6px 0 0;padding:10px;border-radius:12px;background:var(--
     return cache.items;
   }
   const val = (items, k) => (items[k] || {}).value;
+  /* How long ago the bot (PC or GitHub) last gave a sign, in seconds, by the SERVER's clock: the time of this
+     answer (j.now) minus the heartbeat (the moment the server took it, or else the one the bot wrote in it).
+     Never the phone's clock, which may be wrong. A computer asleep stops beating, and the pages say so. */
+  const ms = s => Date.parse(String(s || "").replace(new RegExp("([.][0-9]{3})[0-9]+"), "$1"));
+  function signal(items) {
+    const runner = Object.assign({}, val(items, "app:runner") || {});
+    const got = ms((items["app:runner"] || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(cache.since);
+    if (isFinite(beat) && isFinite(now)) runner.age_s = Math.max(0, Math.round((now - beat) / 1000));
+    return runner;
+  }
   const realFetch = window.fetch.bind(window);
   window.DESKBOT_REMOTE = true;
   window.fetch = async function (input, opts = {}) {
@@ -372,7 +389,7 @@ details.raw pre{margin:6px 0 0;padding:10px;border-radius:12px;background:var(--
           return reply(202, {queued: true});
         }
         const items = await state();
-        const runner = val(items, "app:runner") || {};
+        const runner = signal(items);
         const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
         if (!data) return reply(503, {error: "Ainda sem dados do bot"});
         return reply(200, Object.assign({}, data, {runner}));
@@ -412,6 +429,43 @@ const VENUE_NAME = {fomo: "FOMO", invo: "INVO"};
 const K = PERPS ? {chip: "modo futuros", api: "/api/desk/perps", unit: "pares", what: "futuros"}
                 : {chip: "modo memes", api: "/api/desk/memes", unit: "moedas", what: "memecoins"};
 document.title = "AI Desk Bot · " + K.chip;
+const pcent = v => nf(0).format(v * 100) + "%";
+const capital = s => { s = String(s ?? ""); return s.slice(0, 1).toUpperCase() + s.slice(1); };
+const durTxt = s => { s = Math.max(0, Math.round(s || 0)); return s < 120 ? `${s} s` : s < 7200 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.floor(s % 3600 / 60)).padStart(2, "0")} min`; };
+/* how a trade is sized, in the words of the session on screen (one started before the new rules keeps the old ones) */
+const newRules = (d, next) => (next || !d.legacy) && (d.params || {})[PERPS ? "risk_pct" : "max_trade_pct"] != null;
+function sizing(d, next) {
+  const P = d.params || {};
+  if (!newRules(d, next)) return `${pcent(P.stack_pct || .4)} do saldo livre`;
+  return PERPS ? `arrisca ${pcent(P.risk_pct)} do saldo no stop` : `até ${pcent(P.max_trade_pct)} do saldo por compra`;
+}
+/* a brake only holds entries back while the session runs (and a pause only until its hour) */
+const braking = d => { const g = d.guard || {}; return !!g.on && !!d.running && !(g.until && new Date(g.until) <= Date.now()); };
+/* nothing new is bought right now: the session is over, a brake is on or the desk is full */
+const noEntries = d => !d.running || braking(d) || (d.positions || []).length >= ((d.params || {}).max_open || 2);
+/* phone app only (on the PC there is no runner in the answer): whoever runs the bot gives a sign every few seconds
+   and runner.age_s is how old the last one is, by the server's clock. Over two minutes without one while the desk
+   still says it runs: the computer sleeps, is off or lost the network, and what is on screen stopped there */
+const lost = d => !!(d.runner && d.runner.age_s > 120 && d.running);
+/* what is wrong right now, worst first: a silent session, the brakes, no prices, the last alarm, time unwatched */
+function healthRows(d) {
+  const rows = [], n = (d.positions || []).length, g = d.guard || {}, on = braking(d);
+  const watch = n ? ` ${n} ${n === 1 ? "posição aberta está" : "posições abertas estão"} sem stop até voltar.` : "";
+  if (d.stalled) rows.push(["bad", d.running ? "Sessão sem sinal" : "Sessão parou sem terminar", `Último sinal às ${hhmm(d.last_write)}, há ${durTxt(d.stale_s)}.${watch} Vê o computador.`]);
+  else if (lost(d)) {   /* only the phone's link is known to be silent: the session itself may still be watching its stops */
+    const gh = d.runner.owner === "github", pos = n === 1 ? "a posição aberta fica" : `as ${n} posições abertas ficam`;
+    const risk = n ? ` Se ${gh ? "o GitHub tiver parado" : "o computador estiver a dormir ou desligado"}, ${pos} sem stop até voltar.` : "";
+    rows.push(["bad", `Sem sinal do ${gh ? "GitHub" : "computador"}`, `O telemóvel não recebe dados há ${durTxt(d.runner.age_s)}.${risk}${gh ? "" : " Vê o computador."}`]);
+  }
+  if (on) rows.push(["warn", "Entradas paradas", `${capital(g.reason)}${g.until ? " (até às " + hhmm(g.until) + ")" : ""}. As saídas continuam.`]);
+  if (d.feed_stale && d.running && !d.stalled) rows.push(["bad", "Sem preços", "A fonte de preços não responde: os stops não atuam até voltar."]);
+  const a = (d.alerts || [])[0];
+  if (a && Date.now() - new Date(a.ts) < 30 * 60e3 && !(on && a.reason === g.reason))
+    rows.push(["warn", `Alerta às ${hhmm(a.ts)}`, (a.coin && a.coin !== "—" ? a.coin + ": " : "") + a.reason]);
+  if ((d.max_gap_s || 0) > 60) rows.push(["", "Vigilância", `Maior intervalo sem vigiar os preços nesta sessão: ${durTxt(d.max_gap_s)}.`]);
+  if (d.legacy && d.running) rows.push(["", "Sessão antiga", "Começou antes das regras novas (sem travões nem tamanho por risco). As novas valem a partir da próxima sessão."]);
+  return rows.map(([c, t, b]) => `<div class="hrow ${c}"><b>${esc(t)}</b> · ${esc(b)}</div>`).join("");
+}
 
 /* ---------------------------------------------------------------- auth (same as the other pages) */
 (function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
@@ -484,7 +538,7 @@ async function load() {
   if (first) {
     S.lastEv = (d.log || [])[0]?.ts || null;
     if (!d.running && (!d.recap || d.mode !== MODE)) openConnect();
-    else if (!d.running && d.recap && d.mode === MODE && S.view === "home") openRecap();
+    else if (!d.running && !d.stalled && d.recap && d.mode === MODE && S.view === "home") openRecap();   // a session that died gets its warning, not a summary
   } else notify(d);
   celebrate(d);
   S.celebInit = true;
@@ -506,8 +560,9 @@ addEventListener("hashchange", route);
 function render() {
   const d = S.d; if (!d) return;
   $("#main").hidden = false; $("#tabbar").hidden = false;
-  $("#livepill").className = "livepill" + (d.running ? "" : " off");
-  $("#livepill span").textContent = d.running ? "Live" : "Parada";
+  const silent = d.stalled || lost(d);
+  $("#livepill").className = "livepill" + (d.running && !silent ? "" : " off");
+  $("#livepill span").textContent = d.running ? (silent ? "Sem sinal" : "Live") : "Parada";
   ({home: renderHome, agents: renderAgents, activity: renderActivity, account: renderAccount, coin: renderCoin})[S.view](d);
 }
 const venueName = () => VENUE_NAME[S.venue];
@@ -527,7 +582,8 @@ function renderHome(d) {
   const open = (d.positions || []).length;
   const gm = !PERPS && d.gmgn_key ? " · dados GMGN" : "";
   const sty = !PERPS && d.style === "mais" ? " · mais entradas" : "";
-  $("#conn").innerHTML = `<b>${esc(venueName(d))}</b><span>ligada${esc(gm)} · Compounder 40%${esc(sty)} · ${open} ${open === 1 ? "aberta" : "abertas"}</span>${d.running ? '<i class="dot"></i>' : ""}`;
+  $("#conn").innerHTML = `<b>${esc(venueName(d))}</b><span>ligada${esc(gm)} · ${esc(sizing(d))}${esc(sty)} · ${open} ${open === 1 ? "aberta" : "abertas"}</span>${d.running && !d.stalled && !lost(d) ? '<i class="dot"></i>' : ""}`;
+  $("#health").innerHTML = healthRows(d);
   const eq = d.equity_eur ?? 0, start = d.start_eur || 1, diff = eq - start, mult = eq / start;
   $("#bal").className = "bal" + (diff > 0.005 ? " upc" : "");
   roll($("#bal"), nf(2).format(eq) + " €");
@@ -645,8 +701,9 @@ function agentCard(a, d, wide = false, extra = "") {
   } else if (a === "COMPOUNDER") {
     const mult = (d.equity_eur || 0) / (d.start_eur || 1), goal = P.goal_mult || 10;
     sub = `${nf(2).format(mult)}× agora`; subColor = "var(--yellow)";
-    const next = (d.cash_eur ?? d.equity_eur ?? 0) * (P.stack_pct || .4);
-    body = `<div class="ring">${ringSvg(Math.log(Math.max(mult, 1)) / Math.log(goal), "#ffc83d", goal + "×")}<div class="who"><span class="t2">próximo objetivo</span><b>${esc(eur((d.start_eur || 0) * goal))}</b><span class="up">${PERPS ? "margem" : "compra"} ${esc(eur(next))}</span></div></div>`;
+    const nw = newRules(d), free = (d.cash_eur ?? d.equity_eur ?? 0) * (P.stack_pct || .4);
+    const next = !nw ? free : PERPS ? (d.equity_eur || 0) * P.risk_pct : Math.min((d.equity_eur || 0) * P.max_trade_pct, free);
+    body = `<div class="ring">${ringSvg(Math.log(Math.max(mult, 1)) / Math.log(goal), "#ffc83d", goal + "×")}<div class="who"><span class="t2">próximo objetivo</span><b>${esc(eur((d.start_eur || 0) * goal))}</b>${noEntries(d) ? `<span class="t3">sem novas entradas</span>` : `<span class="up">${!nw ? (PERPS ? "margem" : "compra") : PERPS ? "arrisca" : "compra até"} ${esc(eur(next))}</span>`}</div></div>`;
   } else if (a === "EXECUTOR") {
     const n = (d.positions || []).length + (d.trades || []).filter(t => t.kind !== "half").length;
     sub = `${n} trade${n === 1 ? "" : "s"}`; subColor = "var(--green)";
@@ -660,9 +717,9 @@ function agentCard(a, d, wide = false, extra = "") {
         : `<div class="prog idle"><span>${d.running ? "à espera" : "parado"}</span></div>`);
   } else if (a === "RISK") {
     const open = (d.positions || []).length;
-    sub = open ? `A vigiar ${open}` : "A guardar"; subColor = "var(--risk)";
-    const e = lastOf(d, "RISK");
-    const what = e ? ({half: PERPS ? "Metade a 2R" : "Metade a 2×", trail: "Lucro (trailing)", stop: "Stop", liq: "Liquidada"}[e.kind] || (e.pnl_eur >= 0 ? "Lucro realizado" : "Fechou")) : "";
+    sub = braking(d) ? "Entradas paradas" : open ? `A vigiar ${open}` : "A guardar"; subColor = "var(--risk)";
+    const e = lastOf(d, "RISK", e => e.verdict === "sell");
+    const what = e ? ({half: PERPS ? "Metade a 2R" : "Metade a 2×", trail: "Lucro (trailing)", stop: "Stop", liq: PERPS ? "Liquidada" : "Liquidez caiu"}[e.kind] || (e.pnl_eur >= 0 ? "Lucro realizado" : "Fechou")) : "";
     body = (e ? `<div class="ex-row">${coinAv(e.coin, e.img, 30)}<div><b>${esc(what)}</b><span>${esc(e.coin)} <span class="${cls(e.pnl_eur)}">${esc(seur(e.pnl_eur))}</span></span></div></div>`
               : `<div class="ex-row"><div><b class="t3">nada vendido</b><span>a vigiar a cada 5 s</span></div></div>`)
       + `<div class="pills">${PERPS ? `<span class="pill r">stop ${esc(nf(1).format(P.stop_atr || 1.5))} ATR</span><span class="pill g">½ a 2R</span><span class="pill">trailing</span>`
@@ -686,16 +743,17 @@ function activityRows(d) {
     if (e.verdict === "buy") {
       agent = "EXECUTOR";
       title = PERPS ? `Abriu ${e.side || "long"} ${e.coin}${e.lev ? " " + e.lev + "x" : ""}` : `Comprou ${e.coin}`;
-      sub = `40% do saldo livre · ${t}`; right = eur(e.eur); right2 = e.score != null ? `nota ${e.score}` : `na ${venue}`;
+      sub = `${e.risk_eur ? "arrisca " + eur(e.risk_eur) + " no stop" : (!PERPS && (e.reason || "").split(" · ").find(x => /da mesa$|^teto de/.test(x))) || sizing(d)} · ${t}`; right = eur(e.eur); right2 = e.score != null ? `nota ${e.score}` : `na ${venue}`;
       badge = `<span class="badge" style="background:#2563eb">↗</span>`;
     } else {
       agent = "RISK";
       const k = e.kind || (e.pnl_eur >= 0 ? "trail" : "stop");
-      const verb = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: "Liquidada:", end: "Fechou"}[k] || "Fechou";
+      const verb = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: PERPS ? "Liquidada:" : "Saiu de", end: "Fechou"}[k] || "Fechou";
       title = `${verb} ${e.coin}`;
-      const why = {half: PERPS ? "2R · stop na entrada" : "2× · entrada de volta", stop: PERPS ? "stop" : "stop −8%", trail: PERPS ? "trailing do máximo" : "trailing 10% do máximo", liq: "margem perdida", end: "fim da sessão"}[k] || "";
-      sub = `${why} · ${t}`; right = seur(e.pnl_eur); rcls = cls(e.pnl_eur);
-      right2 = PERPS ? pct(e.pct, 1) : (e.mult != null ? xm(e.mult) : pct(e.pct, 1));
+      const why = {half: PERPS ? "2R · stop na entrada" : "2× · entrada de volta", stop: PERPS ? "stop" : "stop −8%", trail: PERPS ? "trailing do máximo" : "trailing 10% do máximo", liq: PERPS ? "margem perdida" : "a liquidez da pool caiu", end: "fim da sessão"}[k] || "";
+      sub = `${why}${e.fill_src === "model" ? " · preço estimado" : e.fill_src === "zero" ? " · contado a zero" : ""}${e.blind ? " · sem vigia" : ""} · ${t}`; right = seur(e.pnl_eur); rcls = cls(e.pnl_eur);
+      // a sale counted at zero or estimated did not get the price the multiple speaks of: show what it really made
+      right2 = PERPS || e.mult == null || e.fill_src === "zero" || e.fill_src === "model" ? pct(e.pct, 1) : xm(e.mult);
       badge = `<span class="badge" style="background:${e.pnl_eur >= 0 ? "#16a34a" : "#dc2626"}">${e.pnl_eur >= 0 ? "↙" : "×"}</span>`;
     }
     out.push(`<div class="act" role="button" tabindex="0" data-coin="${esc(e.coin)}"><span class="av">${coinAv(e.coin, e.img, 44)}${badge}</span><div class="mid"><b>${esc(title)}</b><span>${face(agent, 14)}${esc(sub)}</span></div><div class="rt"><b class="${rcls}">${esc(right)}</b><span>${esc(right2)}</span></div></div>`);
@@ -771,9 +829,9 @@ function renderAccount(d) {
     ["saldo fictício", d.start_eur ? eur(d.start_eur) : "—"],
     ["agora", eur(d.equity_eur)],
     ["livre", eur(d.cash_eur)],
-    ["sessão", d.started ? `${hhmm(d.started)} → ${hhmm(d.ends)}${running ? "" : " (terminada)"}` : "—"],
+    ["sessão", d.started ? `${hhmm(d.started)} → ${hhmm(d.ends)}${running ? "" : d.stalled ? " (parou sem terminar)" : " (terminada)"}` : "—"],
     ...(PERPS ? [["alavancagem", (d.lev || S.lev) + "x (máx. 10x)"]] : [["entradas", (STYLE[d.style] || STYLE.poucas).name]]),
-    ["Compounder", `${nf(0).format((P.stack_pct || .4) * 100)}% do livre · máx. ${P.max_open || 2} abertas`],
+    ["Compounder", `${sizing(d)} · máx. ${P.max_open || 2} abertas`],
   ].map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
   $("#b-stop").disabled = !running; $("#b-new").disabled = running; $("#b-recap").hidden = !d.recap;
   $("#acc-rules").innerHTML = (d.rules || []).map(r => `<li>${esc(r)}</li>`).join("");
@@ -842,7 +900,7 @@ function rulesBlock(c, d, scale) {
   const half = !!(c.half_done || c.half_px), closed = !c.open;
   const rows = [
     ["EXECUTOR", `Executor <small>${esc(venue)} · ${esc(hhmm(c.opened))}</small>`, PERPS ? `abriu ${c.side} ${c.lev}x a ${usdP(c.entry)}` : `comprou a ${f(c.entry)}${c.cost_eur ? " · " + eur(c.cost_eur) : ""}`, `nota ${c.score ?? "—"} · papel`, ["blue", PERPS ? "abriu" : "comprou"]],
-    ["COMPOUNDER", `Compounder <small>dimensionado</small>`, `${nf(0).format((P.stack_pct || .4) * 100)}% do saldo livre na entrada`, `máx. ${P.max_open || 2} abertas · nunca reforça`, ["", "dimensionado"]],
+    ["COMPOUNDER", `Compounder <small>dimensionado</small>`, capital(sizing(d)), `máx. ${P.max_open || 2} abertas · nunca reforça`, ["", "dimensionado"]],
   ];
   if (PERPS) {
     rows.push(["RISK", `Stop <small>${half ? "na entrada" : nf(1).format(P.stop_atr || 1.5) + " ATR"}</small>`, `fecha a ${usdP(c.stop)}`, c.liq ? `liquidação a ${usdP(c.liq)}` : "", closed ? ["off", "fim"] : ["armed", "armado"]]);
@@ -914,14 +972,17 @@ function banner(title, body, img, coin) {
 function notify(d) {
   const fresh = (d.log || []).filter(e => !S.lastEv || e.ts > S.lastEv);
   if (fresh.length) S.lastEv = fresh[0].ts;
+  const al = fresh.find(x => x.verdict === "alert");
+  if (al) return banner("Alerta" + (al.coin && al.coin !== "—" ? " · " + al.coin : ""), capital(al.reason), "", "");
   const e = fresh.find(x => x.verdict === "sell" || x.verdict === "buy" || x.stage === "CORE");
   if (!e) return;
   const v = venueName(d);
-  if (e.verdict === "buy") banner(PERPS ? `Abriu ${e.side || "long"} ${e.coin} ${e.lev || ""}x · ${eur(e.eur)}` : `Comprou ${e.coin} · ${eur(e.eur)}`, `40% do saldo livre · nota ${e.score ?? "—"} · na ${v} · papel`, e.img, e.coin);
+  if (e.verdict === "buy") banner(PERPS ? `Abriu ${e.side || "long"} ${e.coin} ${e.lev || ""}x · ${eur(e.eur)}` : `Comprou ${e.coin} · ${eur(e.eur)}`, `${e.risk_eur ? "arrisca " + eur(e.risk_eur) + " no stop" : sizing(d)} · nota ${e.score ?? "—"} · na ${v} · papel`, e.img, e.coin);
   else if (e.verdict === "sell") {
-    const what = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: "Liquidada:"}[e.kind] || "Fechou";
+    const what = {half: PERPS ? "Fechou metade de" : "Vendeu metade de", stop: "Parou", trail: "Fechou", liq: PERPS ? "Liquidada:" : "Saiu de"}[e.kind] || "Fechou";
     const tail = e.kind === "half" ? (PERPS ? "O stop passou para a entrada; o resto segue com trailing." : "A entrada voltou; o resto segue com trailing de 10%.")
-      : e.kind === "stop" ? "Posição pequena, segue em frente." : "Próxima compra: 40% do saldo livre.";
+      : e.kind === "stop" ? "Posição pequena, segue em frente." : (e.kind || "end") === "end" ? "Fim da sessão."
+      : noEntries(d) ? "Sem novas entradas por agora." : `Próxima ${PERPS ? "abertura" : "compra"}: ${sizing(d)}.`;
     banner(`${what} ${e.coin} · ${seur(e.pnl_eur)}`, tail, e.img, e.coin);
   } else banner(`${e.coin} passou no Analista`, e.reason, e.img, e.coin);
 }
@@ -965,7 +1026,7 @@ function openConnect() {
     <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
     <div class="lbl">saldo fictício</div><div class="choice" id="c-eur">${stakes.map(v => `<button type="button" data-e="${v}" aria-pressed="${v === S.eur}">${v} €</button>`).join("")}</div>
     ${PERPS ? `<div class="lbl">alavancagem (máximo 10x)</div><div class="choice" id="c-lev">${(d.levs || [2, 5, 10]).map(v => `<button type="button" data-l="${v}" aria-pressed="${v === S.lev}">${v}x</button>`).join("")}</div>` : ""}
-    <ul class="perm"><li><span class="y">✓</span> Compounder: 40% do saldo livre por trade, no máximo 2 abertas</li><li><span class="y">✓</span> ${PERPS ? "metade a 2R, stop para a entrada, o resto com trailing" : "metade a 2×, o resto com trailing de 10%, stop −8% antes"}</li><li><span class="n">✕</span> não mexe em dinheiro real nem na tua conta <span id="c-acc">${VENUE_NAME[S.venue]}</span></li></ul>
+    <ul class="perm"><li><span class="y">✓</span> Compounder: ${esc(sizing(d, true))}, no máximo ${(d.params || {}).max_open || 2} abertas</li>${(d.params || {}).brakes ? `<li><span class="y">✓</span> travões: sem novas entradas com −${pcent(d.params.brakes.session)} na sessão, −${pcent(d.params.brakes.day)} no dia ou ${d.params.brakes.losses} perdas seguidas</li>` : ""}<li><span class="y">✓</span> ${PERPS ? "metade a 2R, stop para a entrada, o resto com trailing" : "metade a 2×, o resto com trailing de 10%, stop −8% antes"}</li><li><span class="n">✕</span> não mexe em dinheiro real nem na tua conta <span id="c-acc">${VENUE_NAME[S.venue]}</span></li></ul>
     <button class="go" id="c-go" type="button">Ligar</button><p id="c-msg" style="color:var(--red);font-size:13px;min-height:16px;margin:8px 0 0"></p>`);
   const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}${PERPS ? " · " + S.lev + "x" : ""}`; };
   sess();
@@ -989,6 +1050,7 @@ function openRecap() {
   const r = S.d && S.d.recap; if (!r) return;
   const diff = r.end_eur - r.start_eur, h = r.minutes >= 60 ? `${Math.round(r.minutes / 60)}h` : `${r.minutes} min`;
   sheet(`<div class="recap"><div style="display:flex;gap:10px;align-items:center"><img src="icon-180.png" alt="" width="38" height="38" style="border-radius:10px"><div><b style="font-size:18px">Resumo de ${esc(h)}</b><div class="t3 mono" style="font-size:11.5px">${K.chip}${!PERPS && S.d.style === "mais" ? " · mais entradas" : ""} · na ${esc(venueName(S.d))} · papel · ${esc(hhmm(r.started))} – ${esc(hhmm(r.ended))}</div></div></div>
+    ${S.d.stalled ? `<p style="color:var(--red);font-size:13px;margin:10px 0 0">A sessão parou sem terminar: estas contas vão só até ao último sinal.</p>` : ""}
     <div class="k">pôs</div><div class="v1">${esc(eur(r.start_eur))}</div>
     <div class="k">agora vale</div><div class="row"><div class="v2 ${cls(diff)}">${esc(eur(r.end_eur))}</div><span class="mult${diff < 0 ? " neg" : ""}">${nf(2).format(r.end_eur / (r.start_eur || 1))}×</span></div>
     <div class="tiles"><div><span>trades</span><b>${r.trades}</b></div><div><span>${K.unit}</span><b>${r.coins_seen}</b></div><div><span>agentes</span><b>5</b></div><div><span>acerto</span><b>${r.win_rate == null ? "—" : nf(0).format(r.win_rate * 100) + "%"}</b></div></div>

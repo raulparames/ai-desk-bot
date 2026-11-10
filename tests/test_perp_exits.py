@@ -120,6 +120,15 @@ def test_session_end_closes_at_the_price_and_without_a_price_at_the_last_one(des
     assert "último preço" in by["BBB"]["reason"]
 
 
+@pytest.mark.parametrize("side", [1, -1])
+def test_2r_reached_on_the_last_reading_closes_the_half_and_then_the_rest(desk, side):
+    put(desk, side)
+    tick(desk, final=True, AAA=100 + side * 3.1)
+    assert not desk.d.positions and [t["kind"] for t in desk.d.trades] == ["half", "end"]    # the rest stayed open before
+    assert desk.d.trades[-1]["reason"] == "fim da sessão" and all(t["pnl_usd"] > 0 for t in desk.d.trades)
+    assert desk.d.trades[0]["id"] == desk.d.trades[1]["id"] and desk.equity() == pytest.approx(desk.d.cash)
+
+
 def test_a_missing_or_zero_price_changes_nothing(desk):
     q = put(desk, 1)
     for mids in ({}, {"AAA": 0}, {"AAA": "nan"}, {"BBB": 50}):

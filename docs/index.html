@@ -221,6 +221,16 @@ a{color:inherit;text-decoration:none}
     return cache.items;
   }
   const val = (items, k) => (items[k] || {}).value;
+  /* How long ago the bot (PC or GitHub) last gave a sign, in seconds, by the SERVER's clock: the time of this
+     answer (j.now) minus the heartbeat (the moment the server took it, or else the one the bot wrote in it).
+     Never the phone's clock, which may be wrong. A computer asleep stops beating, and the pages say so. */
+  const ms = s => Date.parse(String(s || "").replace(new RegExp("([.][0-9]{3})[0-9]+"), "$1"));
+  function signal(items) {
+    const runner = Object.assign({}, val(items, "app:runner") || {});
+    const got = ms((items["app:runner"] || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(cache.since);
+    if (isFinite(beat) && isFinite(now)) runner.age_s = Math.max(0, Math.round((now - beat) / 1000));
+    return runner;
+  }
   const realFetch = window.fetch.bind(window);
   window.DESKBOT_REMOTE = true;
   window.fetch = async function (input, opts = {}) {
@@ -251,7 +261,7 @@ a{color:inherit;text-decoration:none}
           return reply(202, {queued: true});
         }
         const items = await state();
-        const runner = val(items, "app:runner") || {};
+        const runner = signal(items);
         const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
         if (!data) return reply(503, {error: "Ainda sem dados do bot"});
         return reply(200, Object.assign({}, data, {runner}));
@@ -338,7 +348,10 @@ function spark(vals, start, w = 120, h = 36) {
   return `<svg width="${w}" height="${h}" aria-hidden="true"><line x1="0" x2="${w}" y1="${Y(start)}" y2="${Y(start)}" stroke="#d4d4dc" stroke-dasharray="3 4"/><polyline fill="none" stroke="${up ? "#22c55e" : "#dc2626"}" stroke-width="2" stroke-linejoin="round" points="${vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}"/></svg>`;
 }
 const STATUS = {live: ["", "Live"], paused: ["paused", "em pausa"], finished: ["idle", "terminada"], idle: ["idle", "parada"]};
-const liveTag = st => { const [c, t] = STATUS[st] || STATUS.idle; return `<span class="live ${c}"><i></i>${t}</span>`; };
+const liveTag = (st, stalled) => { const [c, t] = stalled ? ["paused", "sem sinal"] : STATUS[st] || STATUS.idle; return `<span class="live ${c}"><i></i>${t}</span>`; };
+/* phone app only (on the PC there is no runner in the answer): runner.age_s is how old the bot's last sign is, by the
+   server's clock. Over two minutes without one, a desk that says it is live is not being run: the computer sleeps, is off or lost the network */
+const lost = d => !!(d.runner && d.runner.age_s > 120);
 
 /* ------------------------------------------------------------ routing */
 const S = {desk: null, d: null, timer: null, lastOk: null};
@@ -364,12 +377,13 @@ async function loadHome() {
   try { d = await api("/api/desks"); ok(); } catch (e) { return offline(e); }
   const total = d.desks.reduce((a, x) => a + (x.equity_eur || 0), 0), start = d.desks.reduce((a, x) => a + (x.start_eur || 0), 0);
   $("#home-total").innerHTML = `${esc(eur(total))} em papel · <span class="${cls(total - start)}">${esc(seur(total - start))}</span> desde o início`;
-  const anyLive = d.desks.some(x => x.status === "live");
+  const gone = lost(d), silent = x => !!x.stalled || (gone && x.status === "live");
+  const anyLive = d.desks.some(x => x.status === "live" && !silent(x));
   $("#home-live").className = "live" + (anyLive ? "" : " idle"); $("#home-live").innerHTML = `<i></i>${anyLive ? "Live" : "parado"}`;
   $("#desks").innerHTML = d.desks.map(x => {
     const diff = (x.equity_eur || 0) - (x.start_eur || 0);
     return `<a class="dcard" href="${x.name === "memes" ? "memes.html" : x.name === "futuros" ? "perps.html" : "#/" + esc(x.name)}" aria-label="Abrir a mesa ${esc(x.title)}">
-      <div class="r1">${blob(x.name, x.color, 38)}<div style="min-width:0"><b>${esc(x.title)}</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.subtitle)}</div></div>${liveTag(x.status)}</div>
+      <div class="r1">${blob(x.name, x.color, 38)}<div style="min-width:0"><b>${esc(x.title)}</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.subtitle)}</div></div>${liveTag(x.status, silent(x))}</div>
       <p class="blurb">${esc(x.blurb)}</p>
       <div class="r2"><div><div class="val">${bigMoney(x.equity_eur)}</div><div class="stats"><span class="${cls(diff)}">${esc(seur(diff))}</span> · ${x.positions} abertas · ${x.trades} trades</div></div>${spark(x.spark, x.start_eur)}</div></a>`;
   }).join("");
@@ -383,7 +397,7 @@ async function loadDesk(quiet) {
 }
 function renderDesk(d) {
   $("#d-mode").textContent = d.mode;
-  const [lc, lt] = STATUS[d.status] || STATUS.idle;
+  const [lc, lt] = lost(d) && d.status === "live" ? ["paused", "sem sinal"] : STATUS[d.status] || STATUS.idle;
   $("#d-live").className = "live " + lc; $("#d-live").innerHTML = `<i></i>${esc(lt)}`;
   // ticker
   const items = (d.ticker || []).map(t => `<span><i style="background:${symColor(t.symbol)}" aria-hidden="true"></i><b>${esc(t.symbol)}</b><span class="${cls(t.pct)}">${esc(pct(t.pct, 1))}</span></span>`).join("");

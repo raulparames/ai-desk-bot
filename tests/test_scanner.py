@@ -69,10 +69,86 @@ def test_more_entries_loosens_whales_votes_and_top10_but_never_the_rug_guard(mon
         desk.gmgn.key = ""
         monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": whales} if "/trades" in path else info)
         monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": None, "freezeAuthority": None, "decimals": 6})
-        monkeypatch.setattr(desk, "_pairs", lambda pools, session=None: {})
+        monkeypatch.setattr(desk, "_pairs", lambda pools, session=None, **kw: {})
         results[style] = (desk.smarts("P", "$X", "M")["ok"], desk.debate("P", pool, "$X", "M")["ok"])
         if style == "mais":   # the rug guard stays on: an active mint is still a no
             monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": "DEV", "freezeAuthority": None, "decimals": 6})
             assert desk.debate("P", pool, "$X", "M")["ok"] is False
             assert desk.d.style == "mais"
     assert results == {"poucas": (False, False), "mais": (True, True)}   # 2 whales and a 33% top 10: only "mais"
+
+
+# ------------------------------------------------ the wide scan's first rug filter (never the last one)
+def _wide_desk(monkeypatch, tmp_path):
+    from deskbot import memetest, memedesk
+    monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest, "STOP_FILE", tmp_path / "stop")
+    monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
+    desk = memedesk.MemesDesk(30, 110)
+    desk.gmgn.key = ""
+    return desk
+
+
+def _token(**kw):
+    """A token that passes every other cut of the wide scan."""
+    old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    t = {"id": "MINT1", "symbol": "T1", "liquidity": 90_000, "mcap": 900_000, "organicScore": 1,
+         "stats1h": {"priceChange": 5}, "audit": {"mintAuthorityDisabled": True, "freezeAuthorityDisabled": True},
+         "firstPool": {"createdAt": old}}
+    t.update(kw)
+    return t
+
+
+def test_a_token_whose_audit_shows_both_authorities_revoked_goes_on(monkeypatch, tmp_path):
+    assert _wide_desk(monkeypatch, tmp_path)._wide_cut(_token()) == ""
+
+
+def test_an_audit_that_does_not_say_the_mint_is_revoked_is_a_cut(monkeypatch, tmp_path):
+    desk = _wide_desk(monkeypatch, tmp_path)
+    assert desk._wide_cut(_token(audit={"freezeAuthorityDisabled": True})) == "mint ativa"          # key absent
+    assert desk._wide_cut(_token(audit={"mintAuthorityDisabled": None, "freezeAuthorityDisabled": True})) == "mint ativa"
+    assert desk._wide_cut(_token(audit={"mintAuthorityDisabled": False, "freezeAuthorityDisabled": True})) == "mint ativa"
+    assert desk._wide_cut(_token(audit={"mintAuthorityDisabled": "true", "freezeAuthorityDisabled": True})) == "mint ativa"
+
+
+def test_an_audit_that_does_not_say_the_freeze_is_revoked_is_a_cut(monkeypatch, tmp_path):
+    desk = _wide_desk(monkeypatch, tmp_path)
+    assert desk._wide_cut(_token(audit={"mintAuthorityDisabled": True})) == "freeze ativo"          # key absent
+    assert desk._wide_cut(_token(audit={"mintAuthorityDisabled": True, "freezeAuthorityDisabled": False})) == "freeze ativo"
+    assert desk._wide_cut(_token(audit={})) == "mint ativa"                 # an empty audit proves nothing
+
+
+def test_a_token_with_no_audit_at_all_is_forwarded_to_the_chain_check(monkeypatch, tmp_path):
+    desk = _wide_desk(monkeypatch, tmp_path)
+    tok = _token()
+    del tok["audit"]
+    assert desk._wide_cut(tok) == ""          # DEBATE reads the mint on chain before any buy
+    assert desk._wide_cut(_token(audit=None)) == ""
+
+
+def test_a_top_level_mint_or_freeze_authority_is_a_cut_whatever_the_audit_says(monkeypatch, tmp_path):
+    desk = _wide_desk(monkeypatch, tmp_path)
+    assert desk._wide_cut(_token(mintAuthority="DEV")) == "mint ativa"
+    assert desk._wide_cut(_token(freezeAuthority="DEV")) == "freeze ativo"
+    no_audit = _token(mintAuthority="DEV")
+    del no_audit["audit"]
+    assert desk._wide_cut(no_audit) == "mint ativa"
+    assert desk._wide_cut(_token(mintAuthority=None, freezeAuthority="")) == ""     # empty means revoked
+
+
+def test_the_new_rug_cuts_are_counted_like_the_others(monkeypatch, tmp_path):
+    desk = _wide_desk(monkeypatch, tmp_path)
+    toks = [_token(id="M1", audit={"mintAuthorityDisabled": True}), _token(id="M2", freezeAuthority="DEV"),
+            _token(id="M3", mintAuthority="DEV")]
+
+    class R:
+        ok = True
+
+        def json(self):
+            return toks
+    seen = []
+    monkeypatch.setattr(desk.http, "get", lambda url, params=None, timeout=None: R())
+    monkeypatch.setattr(desk, "_gecko", lambda path, params=None: seen.append(path))
+    assert desk._wide(set()) == {} and seen == []            # none of them cost a GeckoTerminal call
+    cuts = desk.d.counts["trends"]
+    assert cuts["freeze ativo"] == 2 and cuts["mint ativa"] == 1

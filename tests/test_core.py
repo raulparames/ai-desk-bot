@@ -424,6 +424,7 @@ def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tm
     book = {"levels": [[{"px": "105.99", "sz": "500"}], [{"px": "106.00", "sz": "500"}]]}
     monkeypatch.setattr(desk, "info", lambda body, session=None, **kw: book if body["type"] == "l2Book" else None)
     desk.crowd = {"AAA": {"long": 1, "short": 6, "long_usd": 1e6, "short_usd": 9e6}}
+    desk.crowd_at = __import__("time").time()             # the top traders were read just now
     desk.trends("AAA")
     assert desk.queue and desk.queue[0][1] == 1           # TRENDS says long
     desk.auditor(*desk.queue.pop(0))
@@ -442,15 +443,18 @@ def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tm
     assert desk.d.trades[0]["pnl_usd"] > 0 and not desk.d.positions
 
 
-def test_compounder_sizes_40pct_of_free_cash_sells_half_at_2x_then_trails(monkeypatch, tmp_path):
-    """Memes Compounder: 40% of free cash, max 2 open; -8% stop before 2x; half at 2x; trail 10% after."""
+def test_compounder_sizes_15pct_of_the_desk_sells_half_at_2x_then_trails(monkeypatch, tmp_path):
+    """Memes Compounder: 15% of the desk per buy (it was 40% of free cash, now only a ceiling), max 2 open;
+    -8% stop before 2x; half at 2x; trail 10% after."""
     from deskbot import memetest, memedesk
     monkeypatch.setattr(memetest, "OUT", tmp_path)
+    monkeypatch.setattr(memetest, "STOP_FILE", tmp_path / "stop")
     monkeypatch.setattr(memetest.MemeTest, "_eur_usd", lambda self: 1.0)
     desk = memedesk.MemesDesk(30, 100)
     desk.gmgn.key = ""
-    assert desk.p.max_positions == 2 and desk.trade_size(10_000_000) == 40.0
-    desk._sol = (0.0, 0.0)            # no SOL price: exits use the price model, no network
+    assert desk.p.max_positions == 2 and desk.trade_size(10_000_000) == 15.0
+    assert desk.p.stack_pct == 0.40 and desk.p.max_trade_pct == 0.15 and desk.p.max_deployed_pct == 0.35
+    desk._sol = (0.0, 0.0)            # no SOL price: exits use the pool model, no network
     def pos(pool, cost):
         p = memetest.Position(pool, "$" + pool, pool, pool, "MINT" + pool, "2026-01-01T00:00:00+00:00",
                               1.0, 1.0, cost, cost, 1e12, 1.0, 1.0)
@@ -469,6 +473,7 @@ def test_compounder_sizes_40pct_of_free_cash_sells_half_at_2x_then_trails(monkey
     desk._apply_risk(live(2.6, 0.91), False)           # more than 10% off 3.0
     assert a not in desk.d.positions and desk.d.trades[-1]["kind"] == "trail"
     assert {e["agent"] for e in desk.d.events if e["verdict"] == "sell"} == {"RISK"}
+    assert {t["fill_src"] for t in desk.d.trades} == {"model"}      # no quote was possible: said on every trade
 
 
 def test_push_only_to_real_push_services_and_texts():

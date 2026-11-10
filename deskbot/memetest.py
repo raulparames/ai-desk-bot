@@ -38,11 +38,13 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from . import guard
 from .config import ROOT
 
 log = logging.getLogger("memetest")
 OUT = ROOT / "memetest"
 STOP_FILE = OUT / "stop"
+CURVE_EVERY_S = 30             # one point of the balance curve every 30 s, however often the state is saved
 GECKO = "https://api.geckoterminal.com/api/v2"
 DEXS = "https://api.dexscreener.com/latest/dex/pairs/solana/"
 RPC = "https://api.mainnet-beta.solana.com"
@@ -75,6 +77,8 @@ class MemeParams:
     timeout_h: float = 3.0
     timeout_min_gain: float = 0.05
     cost_per_side: float = 0.01
+    max_trade_pct: float = 0.15        # memes mode: one buy, as a share of the desk's equity
+    max_deployed_pct: float = 0.35     # memes mode: cost of everything open, as a share of the equity
 
 
 @dataclass
@@ -101,6 +105,12 @@ class Position:
     half_ts: int = 0
     mcap: float = 0.0
     created: str = ""                             # pool creation (coin age)
+    decimals: int = 6                             # token decimals: sell quotes are asked in raw units
+    liq0: float = 0.0                             # pool liquidity when bought (memes mode)
+    blind: bool = False                           # lived through a gap without price checks
+    misses: int = 0                               # price readings missed in a row
+    px_src: str = "dex"                           # where the last price came from: "dex" or "jup" (fallback)
+    liq_fresh: bool = True                        # the last risk reading was a DexScreener one: `liquidity` is current
 
 
 @dataclass
@@ -127,6 +137,14 @@ class Desk:
     venue: str = ""                                      # app the coins open in: gmgn or fomo (memes mode)
     feeds: dict = field(default_factory=dict)            # data sources and their state (memes mode)
     style: str = ""                                      # entries: "poucas" (strict) or "mais" (memes mode)
+    guard: dict = field(default_factory=dict)            # the brakes on new entries (guard.py; memes mode)
+    tick_ms: int = 0                                     # how long the last price check took
+    max_tick_ms: int = 0
+    risk_errors: int = 0                                 # price checks of one position that failed
+    feed_stale: bool = False                             # a position has no price: its stop is not watched
+    blind_s: float = 0.0                                 # time without price checks this session
+    max_gap_s: float = 0.0
+    quote_fail: int = 0                                  # sell quotes with no answer (those sales: priced by the model)
 
 
 def _now() -> datetime:
@@ -165,7 +183,8 @@ class MemeTest:
         self.queue: list[tuple[str, dict, str]] = []   # coins the Scanner passed, waiting for the Auditor
         self.ready: list[dict] = []                    # coins the Analyst passed, waiting for the Executor
         self.last_buy = 0.0
-        self.lock = threading.RLock()                  # Risk runs on its own thread
+        self._curve_at = 0.0
+        self.lock = threading.RLock()                 # Risk runs on its own thread
         self.stop = threading.Event()
         self.http_risk = requests.Session()
         self.http_risk.headers.update(HEADERS)
@@ -179,6 +198,10 @@ class MemeTest:
         except (requests.RequestException, KeyError, ValueError):
             return 1.10
 
+    def _nap(self, seconds: float):
+        """A wait between API calls. Memes mode cuts it short when the session is asked to stop."""
+        time.sleep(seconds)
+
     GECKO_PER_MIN = 8
 
     def _gecko(self, path: str, params: dict | None = None):
@@ -187,32 +210,35 @@ class MemeTest:
             cutoff = time.time() - 60
             self._gecko_calls = [t for t in self._gecko_calls if t > cutoff]
             if len(self._gecko_calls) >= self.GECKO_PER_MIN:
-                time.sleep(max(0.0, 61 - (time.time() - self._gecko_calls[0])))
+                self._nap(max(0.0, 61 - (time.time() - self._gecko_calls[0])))
             self._gecko_calls.append(time.time())
             try:
                 r = self.http.get(GECKO + path, params=params or {}, timeout=20)
                 if r.status_code == 429:
                     log.info("GeckoTerminal rate limit, waiting 20 s")
-                    time.sleep(20)
+                    self._nap(20)
                     continue
                 r.raise_for_status()
                 return r.json()
             except (requests.RequestException, ValueError) as exc:
                 log.warning("GeckoTerminal %s failed: %s", path, exc)
-                time.sleep(3)
+                self._nap(3)
         self.d.api_errors += 1
         return None
 
-    def _pairs(self, pools: list[str], session: requests.Session | None = None) -> dict[str, dict]:
+    def _pairs(self, pools: list[str], session: requests.Session | None = None,
+               timeout: float = 20) -> dict[str, dict]:
         out = {}
         for i in range(0, len(pools), 30):
             chunk = pools[i:i + 30]
             try:
-                r = (session or self.http).get(DEXS + ",".join(chunk), timeout=20)
+                r = (session or self.http).get(DEXS + ",".join(chunk), timeout=timeout)
                 r.raise_for_status()
-                for pr in r.json().get("pairs") or []:
-                    out[pr.get("pairAddress")] = pr
-            except (requests.RequestException, ValueError) as exc:
+                body = r.json()
+                for pr in (body.get("pairs") if isinstance(body, dict) else None) or []:
+                    if isinstance(pr, dict):              # a null row is skipped, the good ones are kept
+                        out[pr.get("pairAddress")] = pr
+            except (requests.RequestException, ValueError, TypeError) as exc:
                 self.d.api_errors += 1
                 log.warning("DexScreener failed: %s", exc)
         return out
@@ -228,7 +254,7 @@ class MemeTest:
                     return data.get("parsed", {}).get("info", {})
             except (requests.RequestException, ValueError):
                 pass
-            time.sleep(2)
+            self._nap(2)
         return None
 
     # ------------------------------------------------------------ bookkeeping
@@ -248,12 +274,21 @@ class MemeTest:
         with self.lock:
             return self.d.cash + sum(p.qty * p.last * (1 - self.p.cost_per_side) for p in self.d.positions)
 
-    def save(self):
+    def save(self, final: bool = False):
         with self.lock:
             eq = self.equity()
-            self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
-            state = asdict(self.d)
+            if final or time.time() - self._curve_at >= CURVE_EVERY_S:
+                self._curve_at = time.time()
+                self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
+            for attempt in range(3):          # the scan thread writes its counters without the lock: a dict that
+                try:                          # grew during the copy is copied again
+                    state = asdict(self.d)
+                    break
+                except RuntimeError:
+                    if attempt == 2:
+                        raise
             state["ready"] = [{"coin": r["coin"], "score": r["score"], "since": r["since"]} for r in self.ready]
+        state["saved"] = _now().isoformat(timespec="seconds")
         state["events"] = state["events"][-200:]
         state["equity_usd"] = eq
         state["equity_eur"] = eq / self.d.eur_usd
@@ -552,7 +587,7 @@ class MemeTest:
             self.close(pos, pos.last, "fim do teste (último preço)")
         self.d.finished = True
         self.d.ends = min(self.d.ends, _now().isoformat(timespec="seconds"))
-        self.save()
+        self.save(final=True)
         (OUT / "pid").unlink(missing_ok=True)
         report = self.report()
         (OUT / "relatorio.md").write_text(report, encoding="utf-8")
@@ -567,7 +602,8 @@ class MemeTest:
 
         end = self.equity()
         trades = d.trades
-        wins = [t for t in trades if t["pnl_usd"] > 0]
+        closed = guard.results(trades)        # one result per position: a half sold on the way is not a trade
+        wins = [v for v in closed if v > 0]
         costs = sum(t["cost_usd"] * self.p.cost_per_side + t["got_usd"] * self.p.cost_per_side for t in trades)
         lines = [
             "# Teste de memecoins em papel",
@@ -580,11 +616,12 @@ class MemeTest:
             f"| Saldo inicial | {n(d.start_usd / eur)} | {n(d.start_usd)} |",
             f"| Saldo final | {n(end / eur)} | {n(end)} |",
             f"| Resultado | {n((end - d.start_usd) / eur, True)} ({n((end / d.start_usd - 1) * 100, True)}%) | {n(end - d.start_usd, True)} |",
-            f"| Custos simulados (1% por lado) | {n(costs / eur)} | {n(costs)} |",
+            f"| Custos simulados ({_pt(self.p.cost_per_side * 100, 1).rstrip('0').rstrip(',')}% por lado) "
+            f"| {n(costs / eur)} | {n(costs)} |",
             "",
             f"Câmbio fixo do início: 1 € = {eur:.4f} $.".replace(".", ",", 1) + f" Pools vistos: {d.pools_seen}. Falhas de API: {d.api_errors}.",
             "",
-            f"## Trades ({len(trades)}, {len(wins)} a ganhar)",
+            f"## Trades ({len(closed)}, {len(wins)} a ganhar)",
             "",
         ]
         if trades:

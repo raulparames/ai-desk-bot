@@ -337,7 +337,10 @@ def cmd_memetest(args):
 
 
 def cmd_memedesk(args):
-    from . import memedesk
+    from . import desks_api, memedesk, relay
+    if not args.eur >= desks_api.MEME_STAKES[0]:     # the app refuses it in start_memes; by hand it is refused here
+        print(relay.memes_min_error())
+        raise SystemExit(2)
     fh = logging.FileHandler(ROOT / "logs" / "memetest.log", encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logging.getLogger("memetest").addHandler(fh)

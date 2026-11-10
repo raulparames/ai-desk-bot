@@ -1,7 +1,9 @@
 """The futures desk's safety net, offline: sizing by risk, the re-check at the open, the brakes, a feed that
 stops answering, time without watching (sleep) and one position failing without taking the others with it."""
 
+import json
 import time
+from datetime import datetime, timezone
 
 import pytest
 
@@ -287,3 +289,287 @@ def test_the_stop_button_is_seen_by_the_price_thread(desk, tmp_path, monkeypatch
     monkeypatch.setattr(desk, "save", lambda final=False: desk.stop.set())   # one turn of the loop
     desk.risk_loop()
     assert desk.quit.is_set()
+
+
+# ---------------------------------------------------------------- what the second review found
+def test_no_entry_while_the_price_thread_is_not_turning(desk):
+    ready(desk)
+    desk._loop_at = time.time() - 600                     # it froze ten minutes ago and has not come back to say so
+    desk.execute_best()
+    assert not desk.d.positions and len(desk.ready) == 1 and not desk.calls       # the signal waits, no book is read
+    desk._loop_at = time.time()
+    desk.execute_best()
+    assert len(desk.d.positions) == 1
+
+
+def test_no_entry_while_prices_are_not_arriving(desk):
+    put(desk, 1, "BBB")
+    for _ in range(3):
+        desk.mids = None
+        desk.risk()
+    assert desk.d.feed_stale
+    ready(desk)
+    desk.execute_best()
+    assert len(desk.d.positions) == 1 and len(desk.ready) == 1        # nobody could watch its stop
+    tick(desk, BBB=100.5)
+    desk.execute_best()
+    assert len(desk.d.positions) == 2
+
+
+def test_no_entry_once_the_session_is_asked_to_stop(desk):
+    ready(desk)
+    desk.quit.set()
+    desk.execute_best()
+    assert not desk.d.positions and len(desk.ready) == 1 and not desk.calls
+
+
+@pytest.mark.parametrize("meanwhile, why", [
+    (lambda d: setattr(d.d, "cash", d.d.cash - 11.0), "travão ligado enquanto se preparava a entrada"),
+    (lambda d: setattr(d, "_loop_at", time.time() - 600), "computador esteve parado: entradas em pausa"),
+    (lambda d: setattr(d, "no_new_until", time.time() + 300), "computador esteve parado: entradas em pausa"),
+    (lambda d: setattr(d.d, "feed_stale", True), "sem preços da Hyperliquid: entradas em pausa"),
+    (lambda d: d.quit.set(), "sessão a parar"),
+])
+def test_what_comes_while_the_book_is_read_still_stops_the_entry(desk, monkeypatch, meanwhile, why):
+    read = desk.info
+
+    def slow(body, session=None, **kw):
+        if body["type"] == "l2Book":                      # the brake, the gap, the dead feed or the stop come right here
+            meanwhile(desk)
+        return read(body, session, **kw)
+    monkeypatch.setattr(desk, "info", slow)
+    cash = desk.d.cash
+    desk.open("AAA", 1, 1.0, 88, 100.0)
+    assert not desk.d.positions and desk.d.cash in (cash, cash - 11.0)
+    assert desk.d.events[-1]["verdict"] == "skip" and desk.d.events[-1]["reason"] == why
+    assert not any(e["verdict"] == "buy" for e in desk.d.events)
+
+
+def test_a_gap_whose_candles_did_not_come_is_asked_again_until_they_do(desk):
+    q = put(desk, 1)
+    q._tick = time.time() - 600
+    tick(desk, AAA=101.0)                                 # no candles answered and the price is fine now: nothing known
+    assert q in desk.d.positions and q.blind is True and not desk.d.trades
+    desk.bars = minute_bars([99.5, 98.0, 99.0, 100.0])    # the next check asks again, and now they come
+    tick(desk, AAA=101.0)
+    t = desk.d.trades[-1]
+    assert q not in desk.d.positions and t["kind"] == "stop" and t["blind"] is True
+    assert abs(t["exit"] - 98.5 * (1 - SLIP)) < 1e-9 and "10 min sem vigilância" in t["reason"]
+
+
+def test_candles_that_never_come_are_given_up_and_the_owner_is_told(desk):
+    from deskbot import perpdesk
+    q = put(desk, 1)
+    q._tick = time.time() - 600
+
+    def asked():
+        return sum(c[0] == "candleSnapshot" for c in desk.calls)
+    for n in range(perpdesk.REPLAY_TRIES):
+        assert asked() == n and not alerts(desk)
+        tick(desk, AAA=101.0)
+    said = [a for a in alerts(desk) if "sem velas da Hyperliquid" in a]
+    assert len(said) == 1 and "10 min sem vigilância" in said[0] and "não se sabe se o stop foi batido" in said[0]
+    assert [e["coin"] for e in desk.d.events if e["verdict"] == "alert"] == ["AAA"]
+    tick(desk, AAA=101.0)
+    tick(desk, AAA=101.0)
+    assert asked() == perpdesk.REPLAY_TRIES and len(alerts(desk)) == 1 and q in desk.d.positions
+
+
+def test_a_gap_whose_candles_show_nothing_is_not_asked_again(desk):
+    q = put(desk, 1)
+    q._tick = time.time() - 600
+    desk.bars = minute_bars([99.5, 99.0, 100.0])
+    tick(desk, AAA=101.0)
+    tick(desk, AAA=101.0)
+    assert sum(c[0] == "candleSnapshot" for c in desk.calls) == 1 and q in desk.d.positions and not alerts(desk)
+
+
+def test_top_traders_read_long_ago_do_not_back_an_entry(desk):
+    desk.crowd = {"AAA": {"long": 5, "short": 0, "long_usd": 5e6, "short_usd": 0.0}}
+    desk.crowd_at = time.time()
+    assert desk.smarts("AAA", 1) is True
+    desk.crowd_at = time.time() - 2 * desk.TRADERS_EVERY_S + 60       # one refresh failed: still the latest there is
+    assert desk.smarts("AAA", 1) is True
+    desk.crowd_at = time.time() - 2 * desk.TRADERS_EVERY_S - 65       # two failed: what they held then is old news
+    assert desk.smarts("AAA", 1) is False
+    e = desk.d.events[-1]
+    assert e["verdict"] == "reject" and e["reason"] == "sem dados recentes: top traders lidos há 31 min"
+
+
+def test_a_position_is_watched_from_the_moment_it_opens(desk):
+    t0 = time.time()
+    desk.open("AAA", 1, 1.0, 88, 100.0)
+    q = desk.d.positions[0]
+    assert t0 <= q._tick <= time.time()                   # before, the clock only started at its first price
+    q._tick -= 600                                        # ten minutes with no price check right after the open
+    q.opened = datetime.fromtimestamp(time.time() - 660, timezone.utc).isoformat(timespec="seconds")
+    desk.bars = minute_bars([99.5, 98.0, 99.0, 100.0])
+    tick(desk, AAA=101.0)
+    assert q not in desk.d.positions and desk.d.trades[-1]["kind"] == "stop" and desk.d.trades[-1]["blind"] is True
+
+
+def test_a_candle_begun_before_the_open_does_not_stop_the_position(desk):
+    q = put(desk, 1)                                      # stop at 98.5
+    q.opened = datetime.fromtimestamp(time.time() - 150, timezone.utc).isoformat(timespec="seconds")
+    q._tick = time.time() - 150
+    desk.bars = minute_bars([97.0, 100.0, 100.0], ago_s=200)          # the fall was in the minute the open came into
+    tick(desk, AAA=101.0)
+    assert q in desk.d.positions and q.blind is True and not desk.d.trades
+    q._tick = time.time() - 150
+    desk.bars = minute_bars([100.0, 97.0, 100.0], ago_s=200)          # a minute begun after the open does count
+    tick(desk, AAA=101.0)
+    assert q not in desk.d.positions and abs(desk.d.trades[-1]["exit"] - 98.5 * (1 - SLIP)) < 1e-9
+
+
+def test_a_session_end_without_prices_says_how_old_the_last_price_is(desk):
+    a, b = put(desk, 1, "AAA"), put(desk, 1, "BBB")
+    tick(desk, AAA=100.5, BBB=100.7)
+    a._tick = time.time() - 600                           # AAA's last price is ten minutes old
+    desk.mids = None                                      # and the last reading does not answer
+    desk.risk(final=True)
+    by = {t["coin"]: t for t in desk.d.trades}
+    assert not desk.d.positions and by["AAA"]["kind"] == by["BBB"]["kind"] == "end"
+    assert by["AAA"]["blind"] is True and by["AAA"]["reason"] == "fim da sessão (último preço, de há 10 min)"
+    assert by["BBB"]["blind"] is False and by["BBB"]["reason"] == "fim da sessão (último preço)"
+    assert abs(by["AAA"]["exit"] - 100.5 * (1 - SLIP)) < 1e-9
+    assert desk.calls[-1] == ("allMids", {"timeout": 8, "tries": 2})
+
+
+def test_the_sale_itself_says_when_nobody_was_watching(desk):
+    q = put(desk, 1)
+    q._tick = time.time() - 600
+    desk.bars = minute_bars([99.5, 98.0, 99.0, 100.0])
+    tick(desk, AAA=101.0)
+    put(desk, 1, "BBB", margin=10.0)
+    tick(desk, BBB=98.0)                                  # this one was stopped under watch
+    sells = {e["coin"]: e for e in desk.d.events if e["verdict"] == "sell"}
+    assert sells["AAA"]["blind"] is True and sells["BBB"]["blind"] is False
+
+
+def test_a_position_closed_while_the_bridge_wrote_its_open_leaves_no_ghost_order(desk, monkeypatch):
+    orders, closes = set(), []
+
+    def on_open(coin, side, lev, notional, ref, stop, paper_fill):
+        if coin == "AAA":                                 # the price thread stops it out before the order is written down
+            desk.close(desk.d.positions[-1], 98.0, "stop 1.5 ATR", "stop")
+        orders.add(coin)
+
+    def on_close(coin, side, ref, kind, pnl_usd):
+        closes.append((coin, kind, ref, pnl_usd, coin in orders))
+        orders.discard(coin)
+    monkeypatch.setattr(desk.live, "on_open", on_open)
+    monkeypatch.setattr(desk.live, "on_close", on_close)
+    desk.open("AAA", 1, 1.0, 88, 100.0)
+    t = desk.d.trades[-1]
+    assert not desk.d.positions and not orders            # it was left open in the dry run for ever
+    assert closes == [("AAA", "stop", t["exit"], t["pnl_usd"], False), ("AAA", "stop", t["exit"], t["pnl_usd"], True)]
+    desk.open("BBB", 1, 1.0, 88, 100.0)                   # a position that stays open gets no close
+    assert len(desk.d.positions) == 1 and orders == {"BBB"} and len(closes) == 2
+
+
+def test_reading_the_top_traders_stops_at_once_when_the_session_is_stopped(desk, monkeypatch):
+    rows = [{"ethAddress": f"0x{n}", "accountValue": "2000000",
+             "windowPerformances": [["month", {"pnl": "100", "roi": "0.2"}], ["allTime", {"pnl": "100"}]]} for n in range(5)]
+
+    class Board:
+        def json(self):
+            return {"leaderboardRows": rows}
+    monkeypatch.setattr(desk.http, "get", lambda url, timeout=None: Board())
+    desk.crowd, desk.crowd_at = {"OLD": {}}, 1.0
+    desk.quit.set()
+    desk.load_crowd()
+    assert not desk.calls and desk.crowd == {"OLD": {}} and desk.crowd_at == 1.0      # not one of the 40 requests
+    desk.quit.clear()
+    desk.load_crowd()
+    assert [c[0] for c in desk.calls] == ["clearinghouseState"] * 5 and desk.crowd == {} and desk.crowd_at > 1.0
+
+
+def test_the_state_file_carries_the_moment_it_was_written(desk, tmp_path):
+    desk.save()
+    st = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(st["saved"])).total_seconds()
+    assert -1 <= age < 5                                  # the app's "last signal" reads this, not the file's date
+
+
+@pytest.mark.parametrize("lows, stopped", [
+    ([99.9, 99.6, 100.2], False),                         # between the stop of the gap (98.5) and the entry: not hit
+    ([99.9, 98.0, 100.2], True),                          # under the stop of the gap: hit, at that stop
+])
+def test_a_gap_asked_again_after_the_half_is_read_against_the_stop_it_had(desk, lows, stopped):
+    q = put(desk, 1)                                      # entry 100, stop 98.5
+    q._tick = time.time() - 600
+    tick(desk, AAA=103.1)                                 # no candles came, and the price is at +2R: half, stop to the entry
+    assert q in desk.d.positions and q.half_done and q.stop == 100.0
+    assert [t["kind"] for t in desk.d.trades] == ["half"]
+    desk.bars = minute_bars(lows)                         # the next check asks again, and now they come
+    tick(desk, AAA=103.1)
+    kinds = [t["kind"] for t in desk.d.trades]
+    if not stopped:                                       # it said "stop na entrada batido durante 10 min sem vigilância"
+        assert q in desk.d.positions and kinds == ["half"] and q._gap is None
+        return
+    t = desk.d.trades[-1]
+    assert q not in desk.d.positions and kinds == ["half", "stop"]
+    assert abs(t["exit"] - 98.5 * (1 - SLIP)) < 1e-9 and t["reason"] == "stop 1.5 ATR batido durante 10 min sem vigilância"
+
+
+def test_a_half_reached_while_the_bridge_wrote_the_open_reaches_the_dry_run_once(desk, monkeypatch):
+    orders, said = set(), []
+
+    def on_open(coin, side, lev, notional, ref, stop, paper_fill):
+        q = desk.d.positions[-1]
+        if coin != "CCC":
+            with desk.lock:                               # the price thread: +2R before the order is written down
+                desk._half(q, 103.2)
+        if coin == "AAA":                                 # and then the rest is closed too
+            desk.close(q, 101.0, "trailing 1.5 ATR do máximo", "trail")
+        orders.add(coin)
+
+    def on_half(coin, side, ref, new_stop):
+        said.append(("half", coin, ref, new_stop, coin in orders))    # the real bridge drops a half of a coin it has not
+
+    def on_close(coin, side, ref, kind, pnl_usd):
+        said.append(("close", coin, kind, coin in orders))
+        orders.discard(coin)
+    for name, fn in (("on_open", on_open), ("on_half", on_half), ("on_close", on_close)):
+        monkeypatch.setattr(desk.live, name, fn)
+    desk.open("AAA", 1, 1.0, 88, 100.0)
+    entry = desk.d.trades[0]["entry"]
+    assert not desk.d.positions and not orders
+    assert said == [("close", "AAA", "trail", False), ("half", "AAA", 103.2, entry, True), ("close", "AAA", "trail", True)]
+    del said[:]
+    desk.open("BBB", 1, 1.0, 88, 100.0)                   # the half alone: the position stays open, halved in the dry run too
+    q = desk.d.positions[-1]
+    assert q.half_done and said == [("half", "BBB", 103.2, q.entry, True)]
+    del said[:]
+    desk.open("CCC", 1, 1.0, 88, 100.0)                   # a half after the open is told at once, and only once
+    c = desk.d.positions[-1]
+    assert c.coin == "CCC" and not said
+    tick(desk, BBB=103.2, CCC=103.5)
+    assert c.half_done and said == [("half", "CCC", 103.5, c.entry, True)]
+
+
+def test_the_report_counts_a_half_with_its_position_not_as_a_trade_of_its_own(desk):
+    put(desk, 1)
+    tick(desk, AAA=103.1)                                 # half at +2R
+    tick(desk, AAA=101.0)                                 # the rest leaves on the trailing: one winning position, two sales
+    put(desk, 1, "BBB")
+    tick(desk, BBB=98.0)                                  # and one position stopped out
+    assert [t["kind"] for t in desk.d.trades] == ["half", "trail", "stop"]
+    rep = desk.report()
+    assert "- Trades: 2, 1 a ganhar (50%)" in rep         # it said "3, 2 a ganhar (67%)"
+    assert rep.count(" AAA long 5x: ") == 2 and rep.count(" BBB long 5x: ") == 1      # every sale is still listed
+
+
+def test_a_session_that_ends_with_the_feed_down_does_not_leave_no_prices_on_the_app(desk, tmp_path, monkeypatch):
+    from deskbot import guard
+    monkeypatch.setattr(guard, "keep_awake", lambda on: True)
+    put(desk, 1)
+    tick(desk, AAA=100.5)
+    desk.mids = None                                      # the feed stops answering
+    for _ in range(3):
+        desk.risk()
+    assert desk.d.feed_stale is True
+    desk.quit.set()                                       # "Parar sessão" during the outage
+    desk.run()
+    st = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert st["finished"] is True and not st["positions"] and st["feed_stale"] is False

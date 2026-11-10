@@ -41,6 +41,19 @@ def dur(seconds: float) -> str:
     return f"{s // 3600} h {s % 3600 // 60:02d} min"
 
 
+def results(trades: list[dict], key: str = "pnl_usd") -> list[float]:
+    """One result per closed position. The half sold on the way counts with its position, not as a trade of
+    its own; a position with only its half sold is still open and is left out."""
+    total: dict[str, float] = {}
+    done: list[str] = []
+    for n, t in enumerate(trades):
+        pid = str(t.get("id") or f"#{n}")
+        total[pid] = total.get(pid, 0.0) + float(t.get(key) or 0.0)
+        if t.get("kind") != "half" and pid not in done:
+            done.append(pid)
+    return [total[pid] for pid in done]
+
+
 class Guard:
     def __init__(self, folder: Path, start_usd: float, brakes: Brakes | None = None, now: float | None = None):
         now = time.time() if now is None else now

@@ -76,6 +76,7 @@ GAP_S = 120            # longer than this between two price checks is time witho
 PAUSE_AFTER_GAP_S = 300
 MISS_ALERT = 3         # price readings in a row without an answer before the app is told
 CURVE_EVERY_S = 30
+REPLAY_TRIES = 12      # price checks that ask again for the candles of a gap before giving up on them
 
 
 @dataclass
@@ -315,6 +316,8 @@ class PerpDesk:
         good.sort(key=lambda x: perf(x, "month")["pnl"], reverse=True)
         crowd: dict[str, dict] = {}
         for x in good[:self.p.traders]:
+            if self.quit.is_set():        # asked to stop: do not make the owner wait for 30 more requests
+                return
             st = self.info({"type": "clearinghouseState", "user": x["ethAddress"]})
             for ap in (st or {}).get("assetPositions", []):
                 pos = ap.get("position") or {}
@@ -380,6 +383,7 @@ class PerpDesk:
                 self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
             state = asdict(self.d)
             state["ready"] = [{"coin": r["coin"], "side": r["side"], "score": r["score"]} for r in self.ready]
+        state["saved"] = _now().isoformat(timespec="seconds")     # the app's "last signal": the file's date changes when copied
         state["events"] = state["events"][-200:]
         state["equity_usd"], state["equity_eur"] = eq, eq / self.d.eur_usd
         state["start_eur"] = self.d.start_usd / self.d.eur_usd
@@ -467,6 +471,9 @@ class PerpDesk:
         c = self.crowd.get(coin)
         if not self.crowd:
             self.event("SMARTS", coin, "reject", "sem dados: leaderboard da Hyperliquid não respondeu")
+            return False
+        if time.time() - self.crowd_at > 2 * self.TRADERS_EVERY_S:     # two refreshes failed: what they held then is old news
+            self.event("SMARTS", coin, "reject", f"sem dados recentes: top traders lidos há {guard.dur(time.time() - self.crowd_at)}")
             return False
         if not c:
             self.event("SMARTS", coin, "reject", "nenhum top trader nesta moeda")
@@ -598,9 +605,10 @@ class PerpDesk:
         for r in [r for r in self.ready if now - r["since"] >= 600]:
             self.event("EXEC", r["coin"], "skip", "sinal expirou na fila")
         self.ready = [r for r in self.ready if now - r["since"] < 600]
-        for line in self.guard.check(self.equity()):
-            self.alert(line)
-        if not self.guard.ok or now < self.no_new_until:
+        with self.lock:                                   # the price thread closes positions and tells the brakes
+            for line in self.guard.check(self.equity()):
+                self.alert(line)
+        if not self.guard.ok or now < self.no_new_until or self._unwatched() or self.d.feed_stale or self.quit.is_set():
             return
         if not self.ready or time.time() - self.last_open < self.p.open_every_s:
             return
@@ -611,6 +619,26 @@ class PerpDesk:
         self.ready.remove(best)
         self.last_open = time.time()
         self.open(best["coin"], best["side"], best["atr"], best["score"], best.get("px", 0.0))
+
+    def _unwatched(self) -> bool:
+        """The price thread has not turned for longer than a gap. It will say so when it is back; until then
+        nothing watches the stops, so nothing is opened."""
+        return bool(self._loop_at) and time.time() - self._loop_at > GAP_S
+
+    def _on_hold(self) -> str:
+        """Why an entry may not be booked right now ('' when it may). Asked under the lock, at the last moment:
+        a brake, a gap, a dead feed or a stop can have come while the book was being read."""
+        for line in self.guard.check(self.equity()):
+            self.alert(line)
+        if not self.guard.ok:
+            return "travão ligado enquanto se preparava a entrada"
+        if self._unwatched() or time.time() < self.no_new_until:
+            return "computador esteve parado: entradas em pausa"
+        if self.d.feed_stale:
+            return "sem preços da Hyperliquid: entradas em pausa"
+        if self.quit.is_set():
+            return "sessão a parar"
+        return ""
 
     def open(self, coin: str, side: int, a: float, score: float, px0: float = 0.0):
         """px0 is the price the signal was found at; the book is read again here and the entry is dropped
@@ -640,12 +668,17 @@ class PerpDesk:
         liq = fill * (1 - side * (1 / lev - mm))
         stop = fill - side * self.p.stop_atr * a
         with self.lock:
+            hold = self._on_hold()
+            if hold:
+                return self.event("EXEC", coin, "skip", hold)
             if margin + fee > self.d.cash or margin < 5:
                 return self.event("EXEC", coin, "skip", "sem saldo livre")
             self.d.cash -= margin + fee
             q = Perp(uuid.uuid4().hex[:6], coin, side, lev, _now().isoformat(timespec="seconds"), fill, qty, margin,
                      a, stop, liq, fill, fill, fees=fee, score=score)
             q.series = [[int(time.time() * 1000), fill]]
+            q._tick = time.time()                         # watched from the open: a gap before its first price counts too
+            q._bridged = False                            # the dry run does not have it yet: a half now is told after the open
             self.d.positions.append(q)
         risk_eur = s["risk"] / self.d.eur_usd
         self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · arrisca "
@@ -654,6 +687,14 @@ class PerpDesk:
                    liq=liq, eur=round(margin / self.d.eur_usd, 2), score=round(score), fill_s=round(fill_s, 1),
                    risk_eur=round(risk_eur, 2))
         self._bridge("on_open", coin, side, lev, margin * lev, fill, stop, fill)
+        with self.lock:                                   # the price thread may have closed it while the bridge wrote the open
+            q._bridged = True
+            if q.half_done:                               # +2R came meanwhile: the dry run had no position to halve then
+                self._bridge("on_half", coin, side, q.half_px, q.stop)
+            gone = None if q in self.d.positions else next(
+                (t for t in reversed(self.d.trades) if t["id"] == q.id and t["kind"] != "half"), None)
+            if gone:                                      # its close found nothing to close then: no ghost is left behind
+                self._bridge("on_close", coin, side, gone["exit"], gone["kind"], gone["pnl_usd"])
 
     # ------------------------------------------------------------ EXEC (risk every 5 s)
     def risk_loop(self):
@@ -724,39 +765,63 @@ class PerpDesk:
                     if n == 3:
                         self.alert("a vigilância desta posição falhou 3 vezes seguidas", q.coin)
 
-    def _replay(self, q: Perp, since: float, gap: float) -> bool:
+    def _replay(self, q: Perp, since: float, gap: float, stop: float, half: bool) -> bool | None:
         """After a gap: did the price cross the liquidation or the stop while nobody looked? The 1-minute
         candles of the gap answer. Liquidation is looked at first (the worse case when a bar crossed both); a
-        stop is booked at the stop price, not at today's better one. The half and the trailing are not replayed."""
+        stop is booked at the stop price, not at today's better one. The half and the trailing are not replayed.
+        `stop` and `half` are the position's as the gap began: a +2R half booked since moved the stop to the entry.
+        None: the candles did not come, so nothing is known yet."""
         q.blind = True
         try:
-            bars = self.candles(q.coin, "1m", min(5000, int(gap // 60) + 2), self.http_risk, timeout=4, tries=1)
+            bars = self.candles(q.coin, "1m", min(5000, int((time.time() - since) // 60) + 2), self.http_risk,
+                                timeout=4, tries=1)
         except Exception:
             bars = []
-        bars = [b for b in bars if b["t"] + 60_000 > since * 1000 and b["l"] > 0]
+        opened = datetime.fromisoformat(q.opened).timestamp() * 1000   # a bar begun before the open holds prices from before it
+        bars = [b for b in bars if b["t"] + 60_000 > since * 1000 and b["t"] >= opened and b["l"] > 0]
         if not bars:
-            return False
+            return None
         worst = min(b["l"] for b in bars) if q.side == 1 else max(b["h"] for b in bars)
         if (worst - q.liq) * q.side <= 0:
             self.close(q, q.liq, f"liquidada durante {guard.dur(gap)} sem vigilância", "liq")
             return True
-        if (worst - q.stop) * q.side <= 0:
-            self.close(q, q.stop, ("stop na entrada" if q.half_done else f"stop {self.p.stop_atr:g} ATR")
+        if (worst - stop) * q.side <= 0:
+            self.close(q, stop, ("stop na entrada" if half else f"stop {self.p.stop_atr:g} ATR")
                        + f" batido durante {guard.dur(gap)} sem vigilância", "stop")
             return True
         return False
 
+    def _close_at_last(self, q: Perp, now: float):
+        """The session ends and no price came for this position: it is booked at the last one seen, and the
+        trade says so when that price is old."""
+        age = now - getattr(q, "_tick", now)
+        if age > GAP_S:
+            q.blind = True
+            return self.close(q, q.last, f"fim da sessão (último preço, de há {guard.dur(age)})")
+        self.close(q, q.last, "fim da sessão (último preço)")
+
     def _check(self, q: Perp, px: float, now: float, final: bool):
         if px <= 0:
             if final:
-                self.close(q, q.last, "fim da sessão (último preço)")
+                self._close_at_last(q, now)
             return
         since = getattr(q, "_tick", now)
         hours = (now - since) / 3600
         q._tick = now
         q.funding += q.side * q.qty * px * self.meta.get(q.coin, {}).get("funding", 0.0) * hours
-        if now - since > GAP_S and self._replay(q, since, now - since):
-            return
+        gap = getattr(q, "_gap", None)                    # a gap whose candles did not come: (start, length, stop, half then)
+        if gap is None and now - since > GAP_S:
+            gap = (since, now - since, q.stop, q.half_done)
+        if gap:
+            hit = self._replay(q, *gap)
+            if hit:
+                return
+            tries = q._gap_tries = getattr(q, "_gap_tries", 0) + 1 if hit is None else 0
+            q._gap = gap if hit is None and tries < REPLAY_TRIES else None     # asked again on the next check
+            if hit is None and tries == REPLAY_TRIES:
+                q._gap_tries = 0
+                self.alert(f"sem velas da Hyperliquid para os {guard.dur(gap[1])} sem vigilância: "
+                           "não se sabe se o stop foi batido nesse tempo", q.coin)
         q.last = px
         q.peak = max(q.peak, px) if q.side == 1 else min(q.peak, px)
         _mark(q.series, px)
@@ -770,7 +835,7 @@ class PerpDesk:
             self._half(q, px)
         elif q.half_done and (px - trail) * q.side <= 0:
             self.close(q, px, f"trailing {self.p.trail_atr:g} ATR do máximo", "trail")
-        elif final:
+        if final and q in self.d.positions:               # also the half left by a 2R reached on this last reading
             self.close(q, px, "fim da sessão", "end")
 
     def _record(self, q: Perp, exit_px: float, got: float, margin: float, fee_in: float, fee_out: float,
@@ -791,7 +856,7 @@ class PerpDesk:
         self.event("EXEC", q.coin, "sell", f"fechou {name} ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
                                            f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via INVO (papel)",
                    side=name, pnl_eur=round(pnl / self.d.eur_usd, 2), pct=round(t["pct"], 4), kind=kind,
-                   mult=round(t["mult"], 2))
+                   mult=round(t["mult"], 2), blind=q.blind)
 
     def _half(self, q: Perp, px: float):
         """+2R: close half, move the stop to the entry, let the rest trail."""
@@ -807,7 +872,8 @@ class PerpDesk:
         q.half_done, q.half_px, q.half_ts, q.trail_on = True, px, int(time.time() * 1000), True
         q.stop = q.entry
         self._record(q, exit_px, got, m_half, fee_half, fee, f_half, "metade a 2R · stop na entrada", "half")
-        self._bridge("on_half", q.coin, q.side, px, q.stop)
+        if getattr(q, "_bridged", True):                  # while the bridge still writes the open, open() tells it after
+            self._bridge("on_half", q.coin, q.side, px, q.stop)
 
     def close(self, q: Perp, px: float, reason: str, kind: str = "end"):
         with self.lock:
@@ -862,7 +928,8 @@ class PerpDesk:
         except Exception:
             log.exception("Final price check failed; closing at the last known prices")
         for q in list(self.d.positions):
-            self.close(q, q.last, "fim da sessão (último preço)")
+            self._close_at_last(q, time.time())
+        self.d.feed_stale = False             # nothing is left to watch: the app must not keep "sem preços" for ever
         self.d.finished = True
         self.d.ends = min(self.d.ends, _now().isoformat(timespec="seconds"))
         self.save(final=True)
@@ -874,13 +941,14 @@ class PerpDesk:
     def report(self) -> str:
         d, eur = self.d, self.d.eur_usd
         end = self.equity()
-        wins = [t for t in d.trades if t["pnl_usd"] > 0]
+        closed = guard.results(d.trades)                  # one result per position: a 2R half is not a trade of its own
+        wins = sum(v > 0 for v in closed)
         lines = ["# Modo futuros (5 agentes) em papel", "",
                  f"De {d.started[11:16]} a {_now().isoformat()[11:16]} UTC ({d.started[:10]}), alavancagem {d.lev:g}x. "
                  "Preços e livro de ordens da Hyperliquid (onde a INVO negoceia). Nenhuma ordem real.", "",
                  f"- Saldo: {_pt(d.start_usd / eur)} € → {_pt(end / eur)} € ({'+' if end >= d.start_usd else ''}"
                  f"{_pt((end / d.start_usd - 1) * 100, 1)}%)",
-                 f"- Trades: {len(d.trades)}, {len(wins)} a ganhar" + (f" ({len(wins) / len(d.trades):.0%})" if d.trades else ""),
+                 f"- Trades: {len(closed)}, {wins} a ganhar" + (f" ({wins / len(closed):.0%})" if closed else ""),
                  f"- Taxas: {_pt(sum(t['fees'] for t in d.trades) / eur)} € · funding: {_pt(sum(t['funding'] for t in d.trades) / eur)} €",
                  "", "## Trades", ""]
         for t in d.trades:
