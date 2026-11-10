@@ -80,14 +80,15 @@ class Relay:
     # ------------------------------------------------------------ push / pull
     def push(self, items: dict, force: bool = False) -> int:
         """Send only what changed since the last push (the heartbeat always goes)."""
-        out = {}
+        out, sent = {}, {}
         for k, v in items.items():
             h = _hash(v)
             if force or k == "app:runner" or self._sent.get(k) != h:
                 out[k] = v
-                self._sent[k] = h
+                sent[k] = h
         if out:
             self.rpc("runner_push", {"p_items": out})
+            self._sent.update(sent)      # only what went through: a push that failed is sent again next time
         return len(out)
 
     def get(self, prefix: str) -> dict:
@@ -224,12 +225,53 @@ def run_command(cmd: dict, owner: str, relay: Relay | None = None) -> dict:
                 code, res = 202, {"stopping": True}
             else:
                 code, res = desks_api.stop_perps() if perps else desks_api.stop_memes()
+        elif kind == "analyze_chart" and owner == "github":
+            code, res = _chart_offline(cmd, relay)
+        elif kind == "analyze_chart":       # the model takes a minute: on its own thread, the 5 s heartbeat never waits
+            threading.Thread(target=_chart_job, args=(cmd.get("id"),), name="chart", daemon=True).start()
+            code, res = 202, {}
         else:
             code, res = 400, {"error": "unknown command"}
     except Exception as exc:  # a bad command must never stop the loop
         code, res = 500, {"error": str(exc)}
     log.info("command %s %s -> %s", kind, p, code)
     return {"code": code, **(res if isinstance(res, dict) else {})}
+
+
+# ------------------------------------------------------------ the chart desk (deskbot/chartdesk.py)
+def _chart_job(cmd_id):
+    """The PC's answer to a chart the phone sent, on a thread of its own with a relay of its own (the loop's
+    relay is busy with the heartbeat). Analysis only: no order comes of it."""
+    try:
+        from . import chartdesk
+        relay = Relay()
+        if relay.enabled:
+            chartdesk.from_relay(relay, cmd_id)
+    except Exception as exc:   # this thread must end quietly whatever happens
+        log.warning("chart job failed: %s", exc)
+
+
+def _chart_state() -> dict:
+    from . import chartdesk
+    return chartdesk.public_state()
+
+
+def _chart_offline(cmd: dict, relay: Relay | None) -> tuple[int, dict]:
+    """GitHub cannot read a chart (that takes the PC's Claude login), and the chart desk's state on GitHub's disk
+    is not the PC's: the phone is told the PC is off, the history the PC last pushed stays, and the images are
+    wiped from the relay. gh_cycle hands no relay over, so one is made here when there is a secret for it."""
+    from . import chartdesk
+    job = chartdesk.offline_job(str(cmd.get("id")))
+    try:
+        relay = relay or Relay()
+        if getattr(relay, "enabled", True):
+            old = ((relay.get("chart:out") or {}).get("chart:out") or {}).get("value")
+            history = old.get("history") if isinstance(old, dict) and isinstance(old.get("history"), list) else []
+            relay.push({"chart:out": {"job": job, "history": history, "refused": None},
+                        "chart:in": {"gone": True, "at": time.time()}}, force=True)
+    except Exception as exc:
+        log.warning("chart: offline answer not pushed: %s", exc)
+    return 503, {"error": job["error"]}
 
 
 # ------------------------------------------------------------ the PC side
@@ -266,6 +308,7 @@ def pc_loop(stop: threading.Event | None = None):
                     relay.pull_files(only="/day.json")
                     _safe(lambda: _adopt_silences(relay))
                 relay.push(app_items("pc"))
+                _safe(lambda: relay.push({"chart:out": _chart_state()}))   # charts read on the PC, for the phone
                 for cmd in relay.take_commands("pc"):
                     relay.done(cmd["id"], run_command(cmd, "pc", relay))
                 if time.time() - last_files > 30:

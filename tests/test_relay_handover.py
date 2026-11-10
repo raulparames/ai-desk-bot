@@ -4,7 +4,8 @@ The day's loss travels with the other desk files, a file pulled and not changed 
 minimum holds on GitHub and by hand, a session the computer left unfinished is told once, and the phone pages
 get the age of the bot's last sign by the server's clock.
 
-Offline: the relay's table is a dictionary, the push library a recorder and every folder a temp one.
+Offline: the relay's table is a dictionary, the push library a recorder and every folder a temp one (the chart
+desk's too: pc_loop carries its state to the phone on every tick).
 """
 
 import importlib.util
@@ -23,7 +24,7 @@ import pytest
 import pywebpush
 import requests
 
-from deskbot import cli, desks_api, guard, memedesk, memetest, perpdesk, push, relay
+from deskbot import chartdesk, cli, desks_api, guard, memedesk, memetest, perpdesk, push, relay
 
 REPO = Path(__file__).resolve().parent.parent
 SUB = {"endpoint": "https://web.push.apple.com/a", "keys": {"p256dh": "B" * 87, "auth": "a" * 22}}
@@ -72,6 +73,22 @@ def _no_network(*a, **kw):
 
 def _no_process(*a, **kw):
     raise AssertionError("a test tried to start a session")
+
+
+def _no_real_llm():
+    raise AssertionError("a test tried to build the real LLM")
+
+
+@pytest.fixture(autouse=True)
+def chart_desk(tmp_path, monkeypatch):
+    """The chart desk's folder is a temp one and its memory empty, in every test here: pc_loop reads its state on
+    each tick, and the real chartdesk/ folder is never read, created or written."""
+    out = tmp_path / "chartdesk"
+    monkeypatch.setattr(chartdesk, "OUT", out)
+    monkeypatch.setattr(chartdesk, "make_llm", _no_real_llm)
+    chartdesk._reset()
+    yield out
+    chartdesk._reset()
 
 
 class Rig:
@@ -229,6 +246,18 @@ def test_a_pc_that_takes_the_lead_back_first_takes_what_github_lost_today(rig, m
     assert rig.kv.value("file:memetest/day.json")["realised_usd"] == -7.5     # GitHub's 6 are still in the relay's total
 
 
+def test_the_chart_desk_the_pc_loop_carries_is_the_temp_one_never_the_real_folder(rig, chart_desk):
+    assert chartdesk.OUT == chart_desk == rig.root / "chartdesk" and REPO not in chartdesk.OUT.parents
+    relay.pc_loop(Ticks())
+    assert rig.kv.value("chart:out") == {"job": None, "history": [], "refused": None}   # an empty desk, whatever the real one holds
+    assert not chart_desk.exists()                                       # reading the state creates nothing
+    kept = {"job": None, "history": [{"id": "7", "at": "2026-11-10T10:00:00+00:00", "tfs": ["5m"], "result": {"ativo": "TMP"}}]}
+    rig.file("chartdesk/state.json", kept)                               # what is in the temp folder is what travels
+    chartdesk._reset()
+    relay.pc_loop(Ticks())
+    assert rig.kv.value("chart:out") == {**kept, "refused": None}        # "refused" lives in memory only, never in the file
+
+
 def test_a_pc_that_cannot_read_the_days_loss_does_not_take_the_lead_back_yet(rig, monkeypatch):
     today = guard._today(time.time())
     rig.file("memetest/day.json", {"date": today, "realised_usd": -1.0}, age=3600)
@@ -312,6 +341,30 @@ def test_a_file_changed_here_after_the_pull_is_still_pushed(rig):
     rig.file("perpdesk/state.json", {**st, "equity_eur": 111.0})
     assert pc.push_files() == 1 and rig.kv.value(key)["equity_eur"] == 111.0
     assert pc.push_files() == 0                                  # and only once
+
+
+def test_a_value_whose_push_failed_is_sent_again(rig, monkeypatch):
+    """What was sent is remembered only once the relay took it: a chart answer lost to one bad request would
+    otherwise never go up again, and the phone would stay on "a analisar"."""
+    pc, down = relay.Relay(), [True]
+    kept = {"job": None, "history": []}
+    assert pc.push({"chart:out": kept}) == 1 and pc.push({"chart:out": kept}) == 0
+    done = {"job": {"id": "7", "status": "done"}, "history": []}
+
+    def flaky(_, name, body, timeout=20):
+        if down[0]:
+            raise RuntimeError("runner_push: 503")
+        return rig.kv.rpc(name, body)
+
+    monkeypatch.setattr(relay.Relay, "rpc", flaky)
+    with pytest.raises(RuntimeError):
+        pc.push({"chart:out": done, "file:desks/futuros.json": {"equity": 101.0}})
+    assert rig.kv.value("chart:out") == kept and pc._sent["chart:out"] == relay._hash(kept)
+    assert "file:desks/futuros.json" not in pc._sent             # nothing of the failed batch counts as sent
+    down[0] = False
+    assert pc.push({"chart:out": done}) == 1 and rig.kv.value("chart:out") == done    # the same value, sent now
+    assert pc.push({"chart:out": done}) == 0                     # and, once through, only once
+    assert pc.push({"chart:out": kept}) == 1                     # a value that went back to an old one still goes
 
 
 # ------------------------------------------------------------ C. the memes minimum, everywhere

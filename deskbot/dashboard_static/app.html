@@ -157,7 +157,7 @@ a{color:inherit;text-decoration:none}
 <div class="splash" id="splash" aria-hidden="true">
   <img src="/icon-180.png" alt="">
   <b>AI Desk Bot</b>
-  <span class="sub">terminal · 2 mesas · papel</span>
+  <span class="sub">terminal · 2 mesas + gráfico · papel</span>
 </div>
 <div class="offline" id="offline" role="status" hidden></div>
 
@@ -167,6 +167,11 @@ a{color:inherit;text-decoration:none}
   <h1 class="hello">Mesas</h1>
   <div class="mono t3" style="font-size:12px" id="home-total"></div>
   <div class="desks" id="desks"></div>
+  <!-- analysis only, not a trading desk: static and outside #desks, which loadHome() redraws from /api/desks -->
+  <a class="dcard" href="/grafico" aria-label="Abrir a mesa Gráfico" style="margin-top:12px">
+    <div class="r1"><svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true"><path d="M11 4h18a7 7 0 0 1 7 7v18a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7V11a7 7 0 0 1 7-7z" fill="#7b61ff"/><path d="M12.5 15v13M20 10v15M27.5 13v16" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><rect x="10" y="18" width="5" height="7" rx="1.2" fill="#fff"/><rect x="17.5" y="13" width="5" height="8" rx="1.2" fill="#fff"/><rect x="25" y="17" width="5" height="8" rx="1.2" fill="#fff"/></svg><div style="min-width:0"><b>Gráfico</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">1 screenshot · futuros · 1/5/15 min</div></div></div>
+    <p class="blurb">Envia um screenshot de um gráfico de futuros. A IA lê-o como um trader, avalia o long e o short e diz a melhor opção, ou que é melhor ficar de fora.</p>
+  </a>
   <a class="mainbot" href="/m"><span>Bot principal · cripto spot com a mesa de IA</span><span aria-hidden="true">›</span></a>
 </main>
 

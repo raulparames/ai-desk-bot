@@ -157,7 +157,7 @@ a{color:inherit;text-decoration:none}
 <div class="splash" id="splash" aria-hidden="true">
   <img src="icon-180.png" alt="">
   <b>AI Desk Bot</b>
-  <span class="sub">terminal · 2 mesas · papel</span>
+  <span class="sub">terminal · 2 mesas + gráfico · papel</span>
 </div>
 <div class="offline" id="offline" role="status" hidden></div>
 
@@ -167,6 +167,11 @@ a{color:inherit;text-decoration:none}
   <h1 class="hello">Mesas</h1>
   <div class="mono t3" style="font-size:12px" id="home-total"></div>
   <div class="desks" id="desks"></div>
+  <!-- analysis only, not a trading desk: static and outside #desks, which loadHome() redraws from /api/desks -->
+  <a class="dcard" href="grafico.html" aria-label="Abrir a mesa Gráfico" style="margin-top:12px">
+    <div class="r1"><svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true"><path d="M11 4h18a7 7 0 0 1 7 7v18a7 7 0 0 1-7 7H11a7 7 0 0 1-7-7V11a7 7 0 0 1 7-7z" fill="#7b61ff"/><path d="M12.5 15v13M20 10v15M27.5 13v16" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><rect x="10" y="18" width="5" height="7" rx="1.2" fill="#fff"/><rect x="17.5" y="13" width="5" height="8" rx="1.2" fill="#fff"/><rect x="25" y="17" width="5" height="8" rx="1.2" fill="#fff"/></svg><div style="min-width:0"><b>Gráfico</b><div class="mono t3" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">1 screenshot · futuros · 1/5/15 min</div></div></div>
+    <p class="blurb">Envia um screenshot de um gráfico de futuros. A IA lê-o como um trader, avalia o long e o short e diz a melhor opção, ou que é melhor ficar de fora.</p>
+  </a>
   <p class="mainbot" style="justify-content:center">O bot principal só abre no PC</p>
 </main>
 
@@ -211,8 +216,16 @@ a{color:inherit;text-decoration:none}
     const r = await fetch(URL + "/rest/v1/rpc/" + name, {method: "POST", headers: H, body: JSON.stringify(body)});
     const j = await r.json().catch(() => ({}));
     if (r.status === 403 || r.status === 401 || (j && j.message === "login needed")) { const e = new Error("login"); e.code = 401; throw e; }
-    if (!r.ok) throw new Error(j.message || r.statusText);
+    if (!r.ok) { const e = new Error(j.message || r.statusText); e.status = r.status; throw e; }
     return j;
+  }
+  /* A chart call the relay answered with an error that is not the login (the function is not there yet: 404; the
+     server failed: 500): an answer the page can show, instead of a rejected fetch it would read as "no connection".
+     null for a login error, and when there is no status because the request never left (that one is offline). */
+  function chartFail(e) {
+    if (e.code === 401 || !e.status) return null;
+    return e.status === 404 ? reply(503, {error: "A mesa Gráfico ainda não está disponível no telemóvel"})
+                            : reply(502, {error: "O servidor não aceitou o pedido. Tenta mais tarde."});
   }
   async function state() {
     const j = await rpc("app_state", {p_token: tok(), p_since: cache.since});
@@ -225,12 +238,13 @@ a{color:inherit;text-decoration:none}
      answer (j.now) minus the heartbeat (the moment the server took it, or else the one the bot wrote in it).
      Never the phone's clock, which may be wrong. A computer asleep stops beating, and the pages say so. */
   const ms = s => Date.parse(String(s || "").replace(new RegExp("([.][0-9]{3})[0-9]+"), "$1"));
-  function signal(items) {
-    const runner = Object.assign({}, val(items, "app:runner") || {});
-    const got = ms((items["app:runner"] || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(cache.since);
+  function aged(row, at) {   // row: {value: the runner, updated_at}; at: the server's "now" of the same answer
+    const runner = Object.assign({}, (row || {}).value || {});
+    const got = ms((row || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(at);
     if (isFinite(beat) && isFinite(now)) runner.age_s = Math.max(0, Math.round((now - beat) / 1000));
     return runner;
   }
+  const signal = items => aged(items["app:runner"], cache.since);
   const realFetch = window.fetch.bind(window);
   window.DESKBOT_REMOTE = true;
   window.fetch = async function (input, opts = {}) {
@@ -250,6 +264,34 @@ a{color:inherit;text-decoration:none}
         const j = await r.json().catch(() => ({}));
         if (r.status === 401) { const e = new Error("login"); e.code = 401; throw e; }
         return reply(r.status, j);
+      }
+      /* Chart reading (analysis only): the screenshots are queued for the PC, the answer is read back from the relay. */
+      if (path === "/api/desk/grafico/analyze" && opts.method === "POST") {
+        try {
+          const id = await rpc("app_chart", {p_token: tok(), p_shots: body.shots, p_note: body.note || ""});
+          return reply(202, {id: String(id), status: "queued"});
+        } catch (e) {
+          const said = String(e.message || "");
+          if (said.indexOf("too many charts") >= 0) return reply(429, {error: "Demasiadas análises seguidas: espera uns 10 minutos"});
+          if (said.indexOf("too many commands") >= 0) return reply(429, {error: "Demasiados pedidos: espera um minuto"});
+          if (said.indexOf("too large") >= 0) return reply(413, {error: "As imagens são demasiado grandes"});
+          if (said.indexOf("bad shots") >= 0) return reply(400, {error: "Pedido inválido"});
+          const fail = chartFail(e);
+          if (fail) return fail;
+          throw e;   // a login error goes on to the 401 below
+        }
+      }
+      if (path === "/api/desk/grafico") {
+        try {
+          const j = await rpc("app_chart_get", {p_token: tok()});
+          const runner = aged(j.runner, j.now);
+          /* whatever the PC wrote in chart:out goes through as it is ("refused" too) */
+          return reply(200, Object.assign({ai: {enabled: true, backend: "pc"}, job: null, history: []}, j.chart || {}, {runner}));
+        } catch (e) {
+          const fail = chartFail(e);
+          if (fail) return fail;
+          throw e;
+        }
       }
       if (path === "/api/desks" || path.startsWith("/api/desk/")) {
         if (opts.method === "POST") {

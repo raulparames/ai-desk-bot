@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from . import auditor, data, desks_api, phone, settings_edit
+from . import auditor, chartdesk, data, desks_api, phone, settings_edit
 from .backtest import buy_and_hold, metrics, run_backtest
 from .config import ROOT, Settings, load_controls, load_settings, save_controls
 from .desk import Desk
@@ -908,6 +908,11 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return self.client_address[0] in ("127.0.0.1", "::1")
 
+    def _rebound(self) -> bool:
+        """A web page whose DNS name was pointed at 127.0.0.1: it arrives from this PC under a foreign Host."""
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].lower()
+        return self._local() and host not in ("", "127.0.0.1", "localhost", "[::1]")
+
     def _client_ip(self) -> str:
         xff = self.headers.get("X-Forwarded-For")
         return xff.split(",")[0].strip() if xff else self.client_address[0]
@@ -925,12 +930,17 @@ class Handler(BaseHTTPRequestHandler):
                     "/app": ("app.html", "text/html; charset=utf-8"),
                     "/memes": ("memes.html", "text/html; charset=utf-8"),
                     "/perps": ("memes.html", "text/html; charset=utf-8"),   # same terminal, futures mode
+                    "/grafico": ("grafico.html", "text/html; charset=utf-8"),   # reads a chart screenshot
                     "/sw.js": ("sw.js", "application/javascript; charset=utf-8"),   # lock-screen notifications
                     "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
                     "/icon-180.png": ("icon-180.png", "image/png"),
                     "/icon-512.png": ("icon-512.png", "image/png")}
+    BODY_MAX = 65536
+    BODY_MAX_FOR = {"/api/desk/grafico/analyze": 2_000_000}   # up to three screenshots of 400 KB, in base64
 
     def do_GET(self):
+        if self._rebound():
+            return self._json(403, {"error": "host not allowed"})
         port = self.server.server_port
         routes = {"/api/overview": self.app.overview, "/api/radar": self.app.radar, "/api/desk": self.app.desk,
                   "/api/strategies": self.app.strategies, "/api/activity": self.app.activity,
@@ -940,7 +950,8 @@ class Handler(BaseHTTPRequestHandler):
                   "/api/desk/memes": lambda: desks_api.desk("memes", desks_api.backtests()),
                   "/api/desk/futuros": lambda: desks_api.desk("futuros", desks_api.backtests()),
                   "/api/desk/perps": lambda: desks_api.desk("perps", desks_api.backtests()),
-                  "/api/desk/acoes": lambda: desks_api.desk("acoes", desks_api.backtests())}
+                  "/api/desk/acoes": lambda: desks_api.desk("acoes", desks_api.backtests()),
+                  "/api/desk/grafico": chartdesk.state}
         path = self.path.split("?")[0]
         if path in self.STATIC_FILES:  # pages and icons carry no data; the API below is what needs the token
             name, ctype = self.STATIC_FILES[path]
@@ -963,6 +974,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        if self._rebound():
+            return self._json(403, {"error": "host not allowed"})
         path = self.path.split("?")[0]
         actions = {"/api/desk/demo": lambda b: self.app.start_demo(re.sub(r"[^A-Za-z]", "", str(b.get("symbol", "")))),
                    "/api/params/test": lambda b: self.app.test_params(dict(b.get("changes") or {})),
@@ -981,6 +994,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                              float(b.get("eur") or 110),
                                                                              float(b.get("lev") or 5)),
                    "/api/desk/perps/stop": lambda b: desks_api.stop_perps(),
+                   "/api/desk/grafico/analyze": lambda b: chartdesk.start(b),   # analysis only: no order comes of it
                    "/api/push/subscribe": self.app.push_subscribe,
                    "/api/login": lambda b: self.app.login(self._client_ip(), b)}
         if path not in actions:
@@ -996,8 +1010,13 @@ class Handler(BaseHTTPRequestHandler):
             allowed.add(f"https://{self.headers.get('Host', '')}")
         if self.headers.get("Origin") not in allowed:
             return self._json(403, {"error": "origin not allowed"})
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > 65536:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0:   # read(-1) would wait for the peer to close, past the cap below
+            return self._json(400, {"error": "pedido inválido"})
+        if length > self.BODY_MAX_FOR.get(path, self.BODY_MAX):
             return self._json(413, {"error": "pedido demasiado grande"})
         try:
             body = json.loads(self.rfile.read(length) or b"{}")

@@ -138,7 +138,8 @@ class Arm:
             self.off()
             return
         now = int(time.time())
-        gen = f"{self.runner}-{int(time.time() * 1000)}"
+        self.gen_ms = max(getattr(self, "gen_ms", 0) + 1, int(time.time() * 1000))   # never the same name twice
+        gen = f"{self.runner}-{self.gen_ms}"
         msg = message(self.runner, sessions, gen)
         sends = []
         for k, sub in subs.items():

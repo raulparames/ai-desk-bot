@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Desk Bot">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>AI Desk Bot · gráfico</title>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#000;--card:#111215;--card-2:#191b20;--line:#1f2228;
+  --t1:#f5f6f8;--t2:#a0a4ae;--t3:#666a73;
+  --green:#34d07f;--green-dim:rgba(52,208,127,.16);--red:#ff5c5c;--red-dim:rgba(255,92,92,.15);
+  --yellow:#ffc83d;--blue:#4c8dff;--blue-dim:rgba(76,141,255,.14);--risk:#ff8a3d;
+  --sans:-apple-system,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --top:env(safe-area-inset-top,0px);--bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.35 var(--sans);font-variant-numeric:tabular-nums;-webkit-text-size-adjust:100%}
+body{padding:calc(var(--top) + 6px) 0 calc(var(--bottom) + 32px);overflow-x:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:disabled{cursor:default}
+button:focus-visible,a:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:10px}
+a{color:inherit;text-decoration:none}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;padding:0 max(18px,env(safe-area-inset-right,0px)) 0 max(18px,env(safe-area-inset-left,0px))}
+.t2{color:var(--t2)}.t3{color:var(--t3)}.up{color:var(--green)}.down{color:var(--red)}.mono{font-family:var(--mono)}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* header (as in the terminal) */
+.hdr{display:flex;align-items:center;gap:10px;height:48px}
+.brand{display:flex;align-items:center;gap:9px;min-height:44px}
+.brand img{width:32px;height:32px;border-radius:50%}
+.brand b{font-size:19px;font-weight:700;white-space:nowrap}
+.brand span{color:var(--t3);font-size:18px}
+.chip{flex:none;align-self:flex-start;font:12.5px var(--mono);border-radius:7px;padding:2px 8px;background:var(--card-2);color:var(--t2);white-space:nowrap}
+.chip.armed{background:var(--red-dim);color:#ff8a8a}
+.chip.done{background:var(--green-dim);color:var(--green)}
+.chip.blue{background:var(--blue-dim);color:#8fb4ff}
+.chip.off{background:transparent;color:var(--t3);border:1px solid var(--line)}
+.hdr .chip{margin-left:auto;align-self:center}
+.ttl{margin:6px 0 2px;font:700 30px/1.1 var(--sans);letter-spacing:-.01em}
+.lead{margin:0;color:var(--t2);font-size:15px}
+.health{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.health:empty{display:none}
+.hrow{padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.35;background:var(--card-2);color:var(--t2)}
+.hrow b{color:var(--t1);font-weight:700}
+.hrow.bad{background:var(--red-dim);color:#ff8a8a}.hrow.bad b{color:var(--red)}
+.hrow.warn{background:rgba(255,200,61,.14);color:#ffd873}.hrow.warn b{color:var(--yellow)}
+
+/* panels, section heads, lists */
+.sh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:22px 0 10px}
+.sh h2{margin:0;font-size:23px;font-weight:700}
+.sh span{color:var(--t2);font:13px var(--mono);text-align:right}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-top:12px}
+.panel h2,.panel h3{margin:0 0 8px;font-size:18px}
+.kv{border-top:1px solid var(--line)}
+.kv div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+.kv div span:first-child{color:var(--t2);flex:none}
+.kv div span:last-child{text-align:right;overflow-wrap:anywhere}
+.rlist{margin:0;padding-left:18px;font-size:14.5px;color:var(--t2)}
+.rlist li{margin:6px 0}
+.note{font-size:13px;color:var(--t2);margin:14px 2px 0}
+.empty{color:var(--t3);font-size:15px;padding:6px 0 10px}
+.lbl{display:block;font:12px var(--mono);color:var(--t3);margin-top:14px}
+.field{width:100%;min-height:52px;border-radius:14px;border:1px solid var(--line);background:var(--card);color:var(--t1);padding:0 14px;font:inherit;font-size:17px}
+.panel .field{background:var(--card-2);margin-top:7px}
+.go{width:100%;min-height:54px;border-radius:999px;background:var(--green);color:#03140b;font-weight:800;font-size:17px;margin-top:16px}
+.go:disabled{opacity:.4}
+
+/* the one screenshot */
+.slot{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pick{position:relative;width:100%;height:150px;border-radius:14px;background:var(--card-2);border:1px dashed #3a3d44;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 12px;text-align:center;overflow:hidden}
+.pick .plus{font-size:30px;line-height:1;color:var(--green)}
+.pick .hint{font-size:15.5px;font-weight:700}
+.pick .sub{font-size:13px;color:var(--t2)}
+.pick img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0b0c0f}
+.slot.full .pick{height:210px;border:1px solid var(--green)}
+.slot.full .plus,.slot.full .sub{display:none}
+.slot.full .hint{position:absolute;right:8px;bottom:8px;z-index:1;font:12.5px var(--mono);color:var(--t1);background:rgba(0,0,0,.72);border-radius:7px;padding:3px 8px}
+.slot.busy .pick{opacity:.55}
+.slot.drag .pick{border-color:var(--green);background:var(--green-dim)}
+.rm{min-height:44px;border-radius:12px;background:var(--card-2);font-weight:700;font-size:14.5px;color:var(--t2)}
+.slot:not(.full) .rm{display:none}
+.help{font-size:13.5px;color:var(--t2);margin:10px 0 0}
+
+/* segmented buttons: the timeframe of the screenshot, the leverage the numbers are shown with */
+.seg{display:grid;gap:6px;margin-top:7px}
+.seg.tf{grid-template-columns:1.55fr repeat(3,minmax(0,1fr))}
+.seg.lev{grid-template-columns:repeat(3,minmax(56px,1fr));margin-top:0}
+.seg button{min-width:0;min-height:44px;border-radius:12px;background:var(--card-2);border:1px solid var(--line);padding:0 4px;font-weight:700;font-size:14px;color:var(--t2);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--green-dim);border-color:var(--green);color:var(--t1)}
+@media (max-width:359px){.seg.tf{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.levrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.levrow h3{margin:0;min-width:0}
+.lw{margin:10px 0 0;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.35}
+.lw.bad{background:var(--red-dim);color:#ff8a8a}
+.lw.warn{background:rgba(255,200,61,.14);color:#ffd873}
+.err{color:var(--red);font-size:14px;margin:8px 0 0}
+.err:empty{display:none}
+.why{font-size:13.5px;color:var(--t3);text-align:center;margin:8px 0 0;min-height:18px}
+
+/* waiting / error line */
+.status{display:flex;align-items:center;gap:10px;margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--card-2);font-size:15px;font-weight:600}
+.status.bad{background:var(--red-dim);color:#ff8a8a;font-weight:400}
+.status .secs{margin-left:auto;font:13px var(--mono);color:var(--t2);font-weight:400}
+.spin{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--green);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* result */
+.rcap{font:12.5px var(--mono);color:var(--t3);margin:0 0 6px}
+.rsum{color:var(--t2);font-size:15px;margin:0}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin-top:12px}
+.hero.long{border-color:rgba(52,208,127,.5)}.hero.short{border-color:rgba(255,92,92,.5)}.hero.fora{border-color:rgba(255,200,61,.4)}
+.hero .k{font:12px var(--mono);color:var(--t3)}
+.hero .big{font:700 clamp(30px,9vw,38px)/1.1 var(--sans);letter-spacing:-.02em;margin:2px 0 0}
+.hero.long .big{color:var(--green)}.hero.short .big{color:var(--red)}
+.hero .nm{font-size:16px;font-weight:600;margin:6px 0 0}
+.hero .nm small,.opt .nm small{font:12.5px var(--mono);color:var(--t2);font-weight:400}
+.hero .because{color:var(--t2);font-size:15px;margin:8px 0 0}
+.lvl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.lvl div{background:var(--card-2);border-radius:12px;padding:8px 10px;min-width:0}
+.lvl span{display:block;font-size:12px;color:var(--t3)}
+.lvl b{display:block;font:700 15.5px var(--mono);overflow-wrap:anywhere}
+.lvl small{display:block;font:12px var(--mono);color:var(--t2)}
+.lvl small.up{color:var(--green)}.lvl small.down{color:var(--red)}
+.lvl.wide{grid-template-columns:minmax(0,1fr);gap:6px}
+.lvl.wide div{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
+.lvl.wide b{margin-left:auto}
+.lvl.wide small{width:100%;text-align:right}
+.hero .kv{margin-top:12px}
+.kv div.ev{flex-wrap:wrap;row-gap:2px}
+.kv div.ev span + span{margin-left:auto;text-align:right}
+.kv div.ev small{flex-basis:100%;text-align:right;font-size:13px;color:var(--t2)}
+.txt{margin:12px 0 0;font-size:15px}
+.txt .k{display:block;margin-bottom:2px}
+.opt{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:10px}
+.opt .oh{display:flex;align-items:center;gap:8px;min-width:0}
+.opt .oh b{flex:1;min-width:0;font-size:16px;overflow-wrap:anywhere}
+.opt .rank{flex:none;width:24px;height:24px;border-radius:50%;background:var(--card-2);display:grid;place-items:center;font:700 12.5px var(--mono);color:var(--t2)}
+.opt .nm{margin:4px 0 0}
+.opt .lvl{margin-top:10px}
+.opt .nums{font:13px/1.6 var(--mono);color:var(--t2);margin:10px 0 0}
+.opt .nums b{color:var(--t1);font-weight:700}
+.opt p.sm{font-size:14px;color:var(--t2);margin:8px 0 0}
+.opt.bad{opacity:.62}
+.opt .prob{color:#ffd873;font-size:14px;margin:8px 0 0}
+.scn{margin-top:14px}
+.scn:first-child{margin-top:0}
+.scn .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:16px}
+.scn .row span{font:700 15px var(--mono)}
+.bar{height:10px;border-radius:5px;background:var(--card-2);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;border-radius:5px;background:var(--t2)}
+.bar.alta i{background:var(--green)}.bar.baixa i{background:var(--red)}.bar.lateral i{background:var(--yellow)}
+.scn p{font-size:14px;color:var(--t2);margin:6px 0 0}
+.scn p b{color:var(--t1);font-weight:600}
+.rd{padding:12px 0;border-top:1px solid var(--line)}
+.rd:first-of-type{border-top:0;padding-top:0}
+.rd .oh{display:flex;align-items:center;gap:8px}
+.rd .oh b{font:700 16px var(--mono)}
+.rd .oh b.s{font-family:var(--sans)}
+.rd .oh .chip{align-self:center}
+.rd p{font-size:14.5px;color:var(--t2);margin:8px 0 0}
+.rd p b{color:var(--t1);font-weight:600}
+.rd .kv{margin-top:8px}
+.rd .kv div{font-size:14px;padding:8px 0}
+
+/* history */
+.hist{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:9px 0;text-align:left;border-bottom:1px solid var(--line)}
+.hist .mid{flex:1;min-width:0}
+.hist .mid b{display:block;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .mid span{display:block;font:12.5px var(--mono);color:var(--t2)}
+.hist .rt{flex:none;font-size:14px;font-weight:700;text-align:right}
+.hist[aria-current="true"] .mid b::after{content:" ·";color:var(--green)}
+
+/* lock + offline (as in the terminal) */
+.lock{position:fixed;inset:0;z-index:70;background:var(--bg);display:flex;flex-direction:column;justify-content:center;gap:10px;padding:32px;text-align:center}
+.offline{margin:4px 18px 0;padding:9px 12px;border-radius:12px;background:var(--red-dim);color:var(--red);font-size:14px}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;border-top-color:var(--line);border-color:var(--green)}*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="offline" id="offline" role="status" hidden></div>
+
+<main class="wrap" id="main">
+  <header class="hdr">
+    <a class="brand" href="index.html" aria-label="Voltar às mesas"><img src="icon-180.png" alt=""><b>AI Desk Bot</b><span aria-hidden="true">›</span></a>
+    <span class="chip">análise · papel</span>
+  </header>
+  <h1 class="ttl">Gráfico</h1>
+  <p class="lead">Envia um screenshot de um gráfico de futuros. Leio-o como um trader, avalio o long e o short e digo a melhor opção, ou que é melhor ficar de fora.</p>
+  <div class="health" id="banners" role="status"></div>
+
+  <section class="panel" aria-labelledby="h-shots">
+    <h2 id="h-shots">Screenshot</h2>
+    <div class="slot" id="slot">
+      <button class="pick" type="button" aria-label="Escolher o screenshot do gráfico"><span class="plus" aria-hidden="true">+</span><img alt="" hidden><span class="hint">Escolher screenshot</span><span class="sub">da galeria, dos ficheiros ou da câmara</span></button>
+      <input class="vh" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-hidden="true">
+      <button class="rm" type="button" disabled aria-label="Remover o screenshot">Remover</button>
+    </div>
+    <p class="help">Um screenshot por análise, de um gráfico de futuros (perpétuos) em 1, 5 ou 15 min. No computador também podes colar ou arrastar a imagem.</p>
+    <p class="err" id="shot-msg" role="alert"></p>
+    <span class="lbl" id="h-tf">Tempo do gráfico (opcional)</span>
+    <div class="seg tf" id="tf" role="group" aria-labelledby="h-tf">
+      <button type="button" data-tf="auto" aria-pressed="true">Automático</button>
+      <button type="button" data-tf="1m" aria-pressed="false">1 min</button>
+      <button type="button" data-tf="5m" aria-pressed="false">5 min</button>
+      <button type="button" data-tf="15m" aria-pressed="false">15 min</button>
+    </div>
+    <p class="help">Em Automático leio o tempo na própria imagem.</p>
+    <label class="lbl" for="note">Ativo ou contexto (opcional)</label>
+    <input class="field" id="note" type="text" maxlength="200" autocomplete="off" enterkeyhint="done" placeholder="ex.: BTC/USDT, depois de uma notícia">
+  </section>
+
+  <button class="go" id="go" type="button" disabled>Analisar</button>
+  <p class="why" id="why"></p>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <section id="result-wrap" hidden tabindex="-1" aria-label="Resultado da análise">
+    <div id="result"></div>
+  </section>
+
+  <section id="hist-wrap" hidden>
+    <div class="sh"><h2>Últimas análises</h2></div>
+    <div id="hist"></div>
+  </section>
+  <p class="note">Leitura educativa de uma só imagem, feita por IA: é uma leitura limitada, não uma garantia nem um conselho financeiro. «Melhor opção» quer dizer o melhor valor esperado entre as opções que a imagem mostra, depois de custos aproximados, nunca uma promessa de lucro. As probabilidades são a opinião do modelo e o valor esperado depende delas. Modo papel: nada é comprado ou vendido.</p>
+</main>
+
+<div class="lock" id="lock" hidden>
+  <img src="icon-180.png" alt="" style="width:72px;height:72px;border-radius:18px;margin:0 auto">
+  <h1 style="font:700 24px var(--sans);margin:0">AI Desk Bot</h1>
+  <form id="login" hidden style="max-width:340px;margin:8px auto 0;text-align:left;width:100%">
+    <input type="text" name="username" value="deskbot" autocomplete="username" hidden readonly>
+    <input class="field" id="pw" type="password" autocomplete="current-password" required minlength="6" placeholder="Password">
+    <button class="go" type="submit">Entrar</button>
+    <p id="login-msg" style="color:var(--red);font-size:13px;min-height:18px"></p>
+  </form>
+  <p class="t2" id="lock-nopw" hidden>Ainda não há password. Define-a no PC (painel → Telemóvel).</p>
+</div>
+
+<script>
+/* Remote mode: /api/... answered by the Supabase relay (PC or GitHub, whichever is running the bot). */
+(function () {
+  const URL = "https://kkawnjfowemyqkplkrma.supabase.co", KEY = "sb_publishable_oL1nYjpN8GKzuG_RuhwGgQ_DAxM06qa", H = {"apikey": KEY, "Content-Type": "application/json"};
+  const tok = () => { try { return localStorage.getItem("deskbot-token") || ""; } catch (e) { return ""; } };
+  const cache = {items: {}, since: null};
+  const reply = (code, body) => new Response(JSON.stringify(body), {status: code, headers: {"Content-Type": "application/json"}});
+  async function rpc(name, body) {
+    const r = await fetch(URL + "/rest/v1/rpc/" + name, {method: "POST", headers: H, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 403 || r.status === 401 || (j && j.message === "login needed")) { const e = new Error("login"); e.code = 401; throw e; }
+    if (!r.ok) { const e = new Error(j.message || r.statusText); e.status = r.status; throw e; }
+    return j;
+  }
+  /* A chart call the relay answered with an error that is not the login (the function is not there yet: 404; the
+     server failed: 500): an answer the page can show, instead of a rejected fetch it would read as "no connection".
+     null for a login error, and when there is no status because the request never left (that one is offline). */
+  function chartFail(e) {
+    if (e.code === 401 || !e.status) return null;
+    return e.status === 404 ? reply(503, {error: "A mesa Gráfico ainda não está disponível no telemóvel"})
+                            : reply(502, {error: "O servidor não aceitou o pedido. Tenta mais tarde."});
+  }
+  async function state() {
+    const j = await rpc("app_state", {p_token: tok(), p_since: cache.since});
+    Object.assign(cache.items, j.items || {});
+    cache.since = j.now;
+    return cache.items;
+  }
+  const val = (items, k) => (items[k] || {}).value;
+  /* How long ago the bot (PC or GitHub) last gave a sign, in seconds, by the SERVER's clock: the time of this
+     answer (j.now) minus the heartbeat (the moment the server took it, or else the one the bot wrote in it).
+     Never the phone's clock, which may be wrong. A computer asleep stops beating, and the pages say so. */
+  const ms = s => Date.parse(String(s || "").replace(new RegExp("([.][0-9]{3})[0-9]+"), "$1"));
+  function aged(row, at) {   // row: {value: the runner, updated_at}; at: the server's "now" of the same answer
+    const runner = Object.assign({}, (row || {}).value || {});
+    const got = ms((row || {}).updated_at), beat = isFinite(got) ? got : ms(runner.heartbeat), now = ms(at);
+    if (isFinite(beat) && isFinite(now)) runner.age_s = Math.max(0, Math.round((now - beat) / 1000));
+    return runner;
+  }
+  const signal = items => aged(items["app:runner"], cache.since);
+  const realFetch = window.fetch.bind(window);
+  window.DESKBOT_REMOTE = true;
+  window.fetch = async function (input, opts = {}) {
+    const path = typeof input === "string" ? input : input.url;
+    if (!path.startsWith("/api/")) return realFetch(input, opts);
+    const body = opts.body ? JSON.parse(opts.body) : {};
+    try {
+      if (path === "/api/login" && (opts.method || "GET") === "GET") return reply(200, {password_set: true});
+      if (path === "/api/login") {
+        const r = await realFetch(URL + "/functions/v1/login", {method: "POST", headers: H, body: JSON.stringify({password: body.password})});
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) { cache.items = {}; cache.since = null; }
+        return reply(r.status, j);
+      }
+      if (path === "/api/push/subscribe") {   // lock-screen notifications: the Supabase function keeps the subscription
+        const r = await realFetch(URL + "/functions/v1/push", {method: "POST", headers: H, body: JSON.stringify(Object.assign({}, body, {token: tok()}))});
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) { const e = new Error("login"); e.code = 401; throw e; }
+        return reply(r.status, j);
+      }
+      /* Chart reading (analysis only): the screenshots are queued for the PC, the answer is read back from the relay. */
+      if (path === "/api/desk/grafico/analyze" && opts.method === "POST") {
+        try {
+          const id = await rpc("app_chart", {p_token: tok(), p_shots: body.shots, p_note: body.note || ""});
+          return reply(202, {id: String(id), status: "queued"});
+        } catch (e) {
+          const said = String(e.message || "");
+          if (said.indexOf("too many charts") >= 0) return reply(429, {error: "Demasiadas análises seguidas: espera uns 10 minutos"});
+          if (said.indexOf("too many commands") >= 0) return reply(429, {error: "Demasiados pedidos: espera um minuto"});
+          if (said.indexOf("too large") >= 0) return reply(413, {error: "As imagens são demasiado grandes"});
+          if (said.indexOf("bad shots") >= 0) return reply(400, {error: "Pedido inválido"});
+          const fail = chartFail(e);
+          if (fail) return fail;
+          throw e;   // a login error goes on to the 401 below
+        }
+      }
+      if (path === "/api/desk/grafico") {
+        try {
+          const j = await rpc("app_chart_get", {p_token: tok()});
+          const runner = aged(j.runner, j.now);
+          /* whatever the PC wrote in chart:out goes through as it is ("refused" too) */
+          return reply(200, Object.assign({ai: {enabled: true, backend: "pc"}, job: null, history: []}, j.chart || {}, {runner}));
+        } catch (e) {
+          const fail = chartFail(e);
+          if (fail) return fail;
+          throw e;
+        }
+      }
+      if (path === "/api/desks" || path.startsWith("/api/desk/")) {
+        if (opts.method === "POST") {
+          const ses = path.match(new RegExp("^/api/desk/(memes|perps)/(start|stop)$"));
+          if (path === "/api/desk/pause") await rpc("app_command", {p_token: tok(), p_kind: "pause", p_payload: body});
+          else if (ses) await rpc("app_command", {p_token: tok(), p_kind: ses[2] === "start" ? "start_session" : "stop_session",
+                                                  p_payload: Object.assign({}, ses[2] === "start" ? body : {}, {desk: ses[1]})});
+          else return reply(404, {error: "not found"});
+          return reply(202, {queued: true});
+        }
+        const items = await state();
+        const runner = signal(items);
+        const data = path === "/api/desks" ? val(items, "app:overview") : val(items, "app:desk:" + path.split("/").pop());
+        if (!data) return reply(503, {error: "Ainda sem dados do bot"});
+        return reply(200, Object.assign({}, data, {runner}));
+      }
+      return reply(404, {error: "Só disponível no PC"});
+    } catch (e) {
+      if (e.code === 401) return reply(401, {error: "login"});
+      throw e;
+    }
+  };
+})();
+</script>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
+/* this tab only: the analysis I asked for, so that leaving the page and coming back picks it up again */
+const tab = {get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+             set: (k, v) => { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} }};
+
+/* ---------------------------------------------------------------- numbers and words (pure: the tests run these) */
+const NFC = {};
+function fmt(v, min, max) {
+  const k = min + ":" + max;
+  if (!NFC[k]) {
+    try { NFC[k] = new Intl.NumberFormat("pt-PT", {minimumFractionDigits: min, maximumFractionDigits: max, useGrouping: "always"}); }
+    catch (e) { NFC[k] = new Intl.NumberFormat("pt-PT", {minimumFractionDigits: min, maximumFractionDigits: max}); }
+  }
+  return NFC[k].format(v);
+}
+function num(v) {
+  if (v == null || v === "" || typeof v === "boolean") return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+/* a price with the precision it needs: 67 432,5 · 185,20 · 1,0845 · 0,00001234 (four significant digits when tiny) */
+function fmtPrice(v) {
+  v = num(v);
+  if (v == null) return "—";
+  const a = Math.abs(v);
+  if (a === 0) return "0";
+  if (a >= 1000) return fmt(v, 0, 2);
+  if (a >= 1) return fmt(v, 2, 4);
+  if (a >= 0.01) return fmt(v, 4, 6);
+  const d = Math.min(12, Math.ceil(-Math.log10(a)) + 3);
+  return fmt(v, d, d);
+}
+function fmtPct(v, d) {
+  v = num(v);
+  if (v == null) return "—";
+  if (d == null) d = Math.abs(v) < 1 ? 2 : 1;
+  return fmt(v, d, d) + " %";
+}
+function fmtRR(v) {
+  v = num(v);
+  return v == null ? "—" : "1 : " + fmt(v, 1, 1);
+}
+function fmtEV(v) {
+  v = num(v);
+  return v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), 2, 2) + " R";
+}
+function tfLabel(tf) {
+  return {"1m": "1 min", "5m": "5 min", "15m": "15 min", "auto": "automático", "outro": "outro"}[tf] || String(tf ?? "");
+}
+function trendWord(t) {
+  return {alta: "Alta", baixa: "Baixa", lateral: "Lateral"}[t] || String(t ?? "");
+}
+function actionWord(a) {
+  return a === "long" ? "Comprar (long)" : a === "short" ? "Vender (short)" : "Ficar de fora";
+}
+/* decoded size of a base64 string, without decoding it */
+function b64Bytes(b64) {
+  const n = b64.length;
+  return n ? Math.floor(n * 3 / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0) : 0;
+}
+/* the long edge down to `max`, never up */
+function fitSize(w, h, max) {
+  const k = Math.min(1, max / Math.max(w, h));
+  return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
+}
+/* one option of the RESULT as the words and numbers the page shows (the maths was done by the bot's code, not here).
+   ev is the expected value the page leads with: net of the rough round-trip costs (ev_liq_r) when the bot sent it,
+   and then evNota says the gross one and the cost; an analysis from before the costs has only the gross one (ev_r),
+   shown as "antes de custos" with no note */
+function optionModel(o) {
+  o = o || {};
+  const dir = o.direcao === "short" ? "short" : "long", prob = num(o.prob_alvo), used = num(o.prob_usada);
+  const bruto = num(o.ev_r), liq = num(o.ev_liq_r), custo = num(o.custo_r), ev = liq != null ? liq : bruto;
+  return {
+    dir, titulo: actionWord(dir), lado: dir === "long" ? "Long (compra)" : "Short (venda)",
+    nome: String(o.nome ?? ""), tipo: String(o.tipo ?? ""), tf: tfLabel(o.tf),
+    entrada: fmtPrice(o.entrada), stop: fmtPrice(o.stop), alvo: fmtPrice(o.alvo),
+    stopPct: num(o.stop_pct) == null ? "" : fmtPct(Math.abs(num(o.stop_pct))),
+    alvoPct: num(o.alvo_pct) == null ? "" : fmtPct(Math.abs(num(o.alvo_pct))),
+    rr: fmtRR(o.rr), prob: fmtPct(prob, 0),
+    contada: prob != null && used != null && used !== prob ? "contada como " + fmtPct(used, 0) : "",
+    ev: fmtEV(ev), evSign: ev == null ? 0 : Math.sign(ev), evQuando: liq != null ? "depois de custos" : "antes de custos",
+    evNota: liq == null ? "" : [bruto == null ? "" : fmtEV(bruto) + " antes de custos",
+                                custo == null ? "" : "custos ≈ " + fmt(custo, 2, 2) + " R"].filter(Boolean).join(" · "),
+    equilibrio: num(o.equilibrio_pct) == null ? "" : "Precisa de acertar mais de " + fmtPct(o.equilibrio_pct, 0) + " das vezes para compensar",
+    gatilho: String(o.gatilho ?? ""), porque: String(o.porque ?? ""),
+    valida: o.valida !== false, problema: String(o.problema ?? ""),
+  };
+}
+/* the "Melhor opção" card of a RESULT. The bot's code chose (melhor.acao + melhor.opcao, an index into opcoes);
+   an index that does not point at a valid option of that side falls back to the first one that is, else "fora" */
+function heroModel(r) {
+  r = r || {};
+  const m = r.melhor || {}, ops = Array.isArray(r.opcoes) ? r.opcoes : [];
+  const fits = o => !!o && o.valida !== false && o.direcao === m.acao;
+  let i = -1;
+  if (m.acao === "long" || m.acao === "short") i = Number.isInteger(m.opcao) && fits(ops[m.opcao]) ? m.opcao : ops.findIndex(fits);
+  if (i < 0) {
+    const said = m.acao === "fora" || !m.acao ? String(m.porque ?? "") : "";
+    return {fora: true, index: -1, titulo: "Ficar de fora", motivo: said || "A análise não trouxe uma opção válida."};
+  }
+  return Object.assign(optionModel(ops[i]), {fora: false, index: i, motivo: String(m.porque ?? "")});
+}
+/* Futures: one option seen with leverage. Display only: none of this is sent or sized anywhere. Stop and target as
+   % of the margin (the price % times the leverage: the stop a loss, the target a gain), and liqPct, roughly how far
+   the liquidation is in % of the price with isolated margin (100 / leverage). The exchange liquidates a little before
+   that because of the maintenance margin, hence the 0.5. aviso: "depois" the stop sits at or past the liquidation,
+   "perto" it is within 30 % of it, "" fine or not known. An option that does not count, or one without the numbers,
+   gets nulls and no warning, so nothing is shown for it. */
+function levModel(o, lev) {
+  o = o || {};
+  lev = num(lev);
+  if (lev == null || lev <= 0) return {lev: null, stopMargem: null, alvoMargem: null, liqPct: null, aviso: ""};
+  const r2 = v => Math.round(v * 100) / 100, ok = o.valida !== false;
+  const s = ok ? num(o.stop_pct) : null, t = ok ? num(o.alvo_pct) : null, liq = 100 / lev;
+  const stop = s == null ? null : Math.abs(s), alvo = t == null ? null : Math.abs(t);
+  return {
+    lev, stopMargem: stop == null ? null : -r2(stop * lev) || 0, alvoMargem: alvo == null ? null : r2(alvo * lev),
+    liqPct: r2(liq), aviso: stop == null ? "" : stop >= liq - 0.5 ? "depois" : stop >= 0.7 * liq ? "perto" : "",
+  };
+}
+/* a levModel() number as "−20 %" / "+46 %"; nothing at all when it is not known */
+function fmtMargem(v) {
+  v = num(v);
+  return v == null ? "" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), 0, 1) + " %";
+}
+/* the sentence under an option whose stop is too close to the liquidation, "" when it is not */
+function levWarning(m) {
+  if (!m || m.lev == null || m.liqPct == null || (m.aviso !== "depois" && m.aviso !== "perto")) return "";
+  const lev = fmt(m.lev, 0, 1) + "x", at = "(cerca de " + fmt(m.liqPct, 0, 1) + "% do preço)";
+  return m.aviso === "depois"
+    ? `Com ${lev} a liquidação chega antes do stop ${at}: este stop não te protege.`
+    : `Com ${lev} o stop fica perto da liquidação ${at}: um movimento brusco pode liquidar-te antes de o stop atuar.`;
+}
+/* the leverage the numbers are shown with: 5, 10 or 20, and 10 for anything else (nothing remembered, a bad value) */
+function levPick(v) {
+  v = num(v);
+  return v === 5 || v === 20 ? v : 10;
+}
+/* what goes to the bot: always ONE screenshot, with its timeframe ("auto": the AI reads it from the image) */
+function requestBody(b64, tf, note) {
+  return {shots: [{tf: tf === "1m" || tf === "5m" || tf === "15m" ? tf : "auto", image: String(b64 ?? "")}],
+          note: String(note ?? "").trim().slice(0, 200)};
+}
+/* where an analysis stands. myId: the one this page asked for (null: none); waited: seconds since it asked;
+   refused: {id, error} when the computer turned a request down because another analysis was running (null: none).
+   -> idle | busy (someone else's is running) | pending (the computer has not picked mine up yet) | timeout |
+      analysing | done {result, at, tfs} | error {error} */
+function waitState(job, myId, waited, history, refused) {
+  if (myId == null) return {kind: job && job.status === "analysing" ? "busy" : "idle"};
+  if (!job || String(job.id) !== String(myId)) {
+    const old = (history || []).find(h => String(h.id) === String(myId));     // it ended and another one came after
+    if (old) return {kind: "done", result: old.result, at: old.at, tfs: old.tfs};
+    if (refused && String(refused.id) === String(myId)) return {kind: "error", error: String(refused.error || "Já há uma análise a decorrer")};
+    return {kind: waited > 40 ? "timeout" : "pending"};
+  }
+  if (job.status === "error" || job.status === "offline") return {kind: "error", error: String(job.error || "A análise falhou. Tenta outra vez.")};
+  if (job.status === "done") return job.result ? {kind: "done", result: job.result, at: job.ended || job.started, tfs: job.tfs}
+                                               : {kind: "error", error: "A análise terminou sem resultado. Tenta outra vez."};
+  return {kind: "analysing"};
+}
+/* waitState() judges whatever state is in memory, and that may be older than the wait is long: back on the page
+   after a while, or the page opened again, the clock says 40 s before the fresh answer has landed. So "timeout" only
+   counts on a state that was ASKED FOR after the 40 s were over (stateAt and since: ms, the page's clock; stateAt 0:
+   no state yet). Until then the wait goes on as "pending"; every other kind is what it is.
+   One way out when no answer comes at all: every GET has failed for a minute (failAt: when the first of that run was
+   asked for, 0: the last one worked) and the 40 s are over -> "lost", so the page is not left waiting for ever. */
+function waitKind(kind, stateAt, since, failAt, now) {
+  if ((kind === "pending" || kind === "timeout" || kind === "analysing")
+      && failAt > 0 && now - failAt >= 60000 && now - since >= 40000) return "lost";
+  return kind === "timeout" && !(stateAt >= since + 40000) ? "pending" : kind;
+}
+
+/* ---------------------------------------------------------------- auth (same as the other pages) */
+(function () { const m = location.hash.match(/t=([A-Za-z0-9_-]+)/); if (m) { store.set("deskbot-token", m[1]); history.replaceState(null, "", location.pathname); } })();
+let TOKEN = store.get("deskbot-token") || "";
+async function api(path, opts = {}) {
+  let r;
+  const headers = Object.assign({}, opts.headers || {}, TOKEN ? {"X-Desk-Token": TOKEN} : {});
+  try { r = await fetch(path, Object.assign({}, opts, {headers})); }
+  catch (e) { const err = new Error("sem ligação"); err.offline = true; throw err; }
+  if (r.status === 401) { showLock(); const err = new Error("sem chave"); err.locked = true; throw err; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+async function showLock() {
+  $("#lock").hidden = false;
+  let has = false;
+  try { has = (await (await fetch("/api/login")).json()).password_set; } catch (e) {}
+  $("#login").hidden = !has; $("#lock-nopw").hidden = has;
+}
+$("#login").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch("/api/login", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({password: $("#pw").value})});
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok || !b.token) throw new Error(b.error || "Não deu para entrar.");
+    TOKEN = b.token; store.set("deskbot-token", TOKEN); $("#lock").hidden = true; load();
+  } catch (err) { $("#login-msg").textContent = err.message; }
+});
+
+/* ---------------------------------------------------------------- state */
+const API = "/api/desk/grafico";
+const LEVS = [5, 10, 20];
+const MAX_EDGE = 1568, MAX_BYTES = 300000, QUALITIES = [0.85, 0.75, 0.65];
+const WAIT_KEY = "deskbot-grafico-wait", LEV_KEY = "deskbot-grafico-lev";
+const S = {
+  state: null,                           // the last answer of GET /api/desk/grafico
+  stateAt: 0,                            // when the GET behind it was asked for (ms, 0: none yet)
+  failAt: 0,                             // when the first GET of the current run of failures was asked for (0: none)
+  shot: null,                            // {b64, bytes} once the image is ready to send
+  opening: false,                        // an image is still being shrunk
+  tf: "auto",                            // the timeframe said for the screenshot: auto | 1m | 5m | 15m
+  lev: levPick(store.get(LEV_KEY)),      // how the numbers are shown, never sent; 10 when nothing can be remembered
+  sending: false,
+  wait: null,                            // {id, since, quiet}: the analysis this page asked for
+  watch: null,                           // id of an analysis somebody else started, followed to its end
+  phase: "idle",                         // waitState().kind for what is on screen
+  msg: null,                             // {text} shown in the error style under the button
+  shown: null,                           // {id, result, at, tfs}: the result on screen
+  loading: false, histKey: "",
+};
+(function resume() {
+  try {
+    const w = JSON.parse(tab.get(WAIT_KEY) || "null");
+    /* found again after the waiting time is long over: look for it, but say nothing if it is not there */
+    if (w && w.id != null && isFinite(w.since)) S.wait = {id: String(w.id), since: +w.since, quiet: Date.now() - w.since > 40000};
+  } catch (e) {}
+})();
+function startWait(id) {
+  S.wait = {id: String(id), since: Date.now(), quiet: false};
+  tab.set(WAIT_KEY, JSON.stringify({id: S.wait.id, since: S.wait.since}));
+}
+function endWait() { S.wait = null; tab.set(WAIT_KEY, null); }
+
+/* ---------------------------------------------------------------- the screenshot: pick, shrink, show */
+function shotMsg(text) { $("#shot-msg").textContent = text || ""; }
+function openImage(file) {
+  return new Promise((ok, bad) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => img.naturalWidth && img.naturalHeight ? ok({img, url}) : (URL.revokeObjectURL(url), bad(new Error("empty")));
+    img.onerror = () => { URL.revokeObjectURL(url); bad(new Error("unreadable")); };
+    img.src = url;
+  });
+}
+/* Whatever was chosen goes out as a JPEG of at most 1568 px on the long edge and 300 kB: first lower the quality,
+   then the size. Drawn over a dark fill so a see-through PNG stays readable. Only the result is kept, in memory. */
+async function shrink(file) {
+  let opened;
+  try { opened = await openImage(file); }
+  catch (e) { throw new Error("Não consegui abrir esta imagem."); }
+  try {
+    const img = opened.img, cv = document.createElement("canvas"), g = cv.getContext("2d");
+    let [w, h] = fitSize(img.naturalWidth, img.naturalHeight, MAX_EDGE);
+    for (let step = 0; step < 24; step++) {
+      cv.width = w; cv.height = h;
+      g.fillStyle = "#0b0c0f"; g.fillRect(0, 0, w, h);
+      g.drawImage(img, 0, 0, w, h);
+      for (const q of QUALITIES) {
+        const b64 = (cv.toDataURL("image/jpeg", q).split(",")[1]) || "";
+        if (b64 && b64Bytes(b64) <= MAX_BYTES) return {b64, bytes: b64Bytes(b64)};
+      }
+      if (w < 200 || h < 200) break;
+      w = Math.max(1, Math.round(w * 0.85)); h = Math.max(1, Math.round(h * 0.85));
+    }
+    throw new Error("Não consegui reduzir esta imagem. Corta o screenshot e tenta outra vez.");
+  } catch (e) {
+    throw new Error(/^Não consegui/.test(e.message) ? e.message : "Não consegui abrir esta imagem.");
+  } finally { URL.revokeObjectURL(opened.url); }
+}
+function paintSlot() {
+  const el = $("#slot"), shot = S.shot, img = $("img", el);
+  el.classList.toggle("full", !!shot);
+  el.classList.toggle("busy", S.opening);
+  img.hidden = !shot;
+  if (shot) img.src = "data:image/jpeg;base64," + shot.b64; else img.removeAttribute("src");
+  $(".hint", el).textContent = S.opening ? "A abrir…" : shot ? "Trocar" : "Escolher screenshot";
+  $(".pick", el).setAttribute("aria-label", shot ? "Trocar o screenshot do gráfico (já escolhido)" : "Escolher o screenshot do gráfico");
+  $(".rm", el).disabled = !shot;
+}
+/* there is one place only: a new image takes it; one that cannot be opened leaves the one before where it was */
+let fillSeq = 0;
+async function fill(file) {
+  if (!file) return;
+  const seq = ++fillSeq;
+  shotMsg(""); S.msg = null;
+  S.opening = true; paintSlot(); renderControls();
+  let shot = null, why = "";
+  try { shot = await shrink(file); }
+  catch (e) { why = e.message; }
+  if (seq !== fillSeq) return;               // another image was chosen meanwhile, or this one removed: that wins
+  if (shot) S.shot = shot; else shotMsg(why);
+  S.opening = false; paintSlot(); renderControls();
+}
+/* pasted or dropped on a computer: one screenshot per analysis, so the first image is the one that stays */
+function place(files) {
+  if (!files.length) return;
+  fill(files[0]);
+  if (files.length > 1) shotMsg("Só vai um screenshot por análise: fiquei com o primeiro.");
+}
+(function () {
+  const el = $("#slot"), input = $("input", el);
+  $(".pick", el).addEventListener("click", () => input.click());
+  input.addEventListener("change", () => { const f = input.files && input.files[0]; input.value = ""; fill(f); });
+  $(".rm", el).addEventListener("click", () => { fillSeq++; S.shot = null; S.opening = false; shotMsg(""); paintSlot(); renderControls(); $(".pick", el).focus(); });
+})();
+function paintTf() { $$("#tf button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tf === S.tf))); }
+$$("#tf button").forEach(b => b.addEventListener("click", () => { S.tf = b.dataset.tf; paintTf(); }));
+const hasFiles = e => !!e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
+document.addEventListener("paste", e => {
+  if (!$("#lock").hidden) return;
+  const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(f => /^image\//.test(f.type));
+  if (!files.length) return;                 // plain text into the note field goes its normal way
+  e.preventDefault(); place(files);
+});
+document.addEventListener("dragover", e => { if (hasFiles(e)) { e.preventDefault(); $("#slot").classList.add("drag"); } });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) $("#slot").classList.remove("drag"); });
+document.addEventListener("drop", e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); $("#slot").classList.remove("drag");
+  if ($("#lock").hidden) place([...e.dataTransfer.files]);
+});
+
+/* ---------------------------------------------------------------- ask for an analysis, follow it */
+async function analyse() {
+  if (!S.shot || S.opening || S.sending || S.wait) return;
+  S.sending = true; S.msg = null; renderControls();
+  try {
+    const r = await api(API + "/analyze", {method: "POST", headers: {"Content-Type": "application/json"},
+                                           body: JSON.stringify(requestBody(S.shot.b64, S.tf, $("#note").value))});
+    if (r.id == null) throw new Error("O pedido não foi aceite. Tenta outra vez.");
+    startWait(r.id);
+    S.shown = null; S.watch = null; renderResult();        // the old reading leaves the screen while the new one is made
+  } catch (e) {
+    if (!e.locked) S.msg = {text: e.offline ? "Sem ligação: o pedido não saiu. Tenta outra vez." : e.message};
+  }
+  S.sending = false;
+  step();
+  if (S.wait) { await load(); schedule(); }
+}
+$("#go").addEventListener("click", analyse);
+
+async function load() {
+  if (S.loading) return;
+  S.loading = true;
+  const asked = Date.now();
+  try { S.state = await api(API); S.stateAt = asked; S.failAt = 0; $("#offline").hidden = true; }
+  catch (e) {
+    if (!e.locked) {
+      if (!S.failAt) S.failAt = asked;
+      $("#offline").hidden = false; $("#offline").textContent = e.offline ? "Sem ligação ao bot · a tentar outra vez" : "Erro: " + e.message;
+      if (S.wait) step();                // a wait with no answer at all ends here, a minute into the failures
+    }
+    return;
+  }
+  finally { S.loading = false; }
+  step();
+}
+/* one look at the last known state: end the wait when it is over, then redraw the controls. The wait is only given
+   up as "the computer did not answer" on a state asked for after the 40 s (waitKind), never on an older one */
+function step() {
+  const st = S.state || {}, job = st.job || null, w = S.wait;
+  if (w) {
+    const ws = waitState(job, w.id, (Date.now() - w.since) / 1000, st.history, st.refused);
+    const kind = waitKind(ws.kind, S.stateAt, w.since, S.failAt, Date.now());
+    if (kind === "done") { endWait(); S.msg = null; show({id: w.id, result: ws.result, at: ws.at, tfs: ws.tfs}, true); }
+    else if (kind === "error") { endWait(); S.msg = {text: ws.error}; }
+    else if (kind === "lost") { endWait(); S.msg = {text: "Sem ligação ao bot há mais de um minuto. Se a análise chegar ao fim, aparece em «Últimas análises»."}; }
+    else if (kind === "timeout") { endWait(); S.msg = w.quiet ? null : {text: "O computador não respondeu. Confirma que está ligado e tenta outra vez."}; }
+    else if (kind === "analysing") w.quiet = false;         // it is being made now: an end without an answer is worth saying
+    if (S.wait) S.phase = kind;
+  }
+  if (!S.wait) {
+    S.phase = waitState(job, null, 0).kind;
+    /* an analysis started elsewhere (another tab, the phone): follow it and show how it ended */
+    if (S.phase === "busy") { S.watch = String(job.id); S.msg = null; }
+    else if (S.watch != null) {
+      if (job && String(job.id) === S.watch && !w) {
+        if (job.status === "done" && job.result) show({id: S.watch, result: job.result, at: job.ended || job.started, tfs: job.tfs}, false);
+        else if (job.status === "error" || job.status === "offline") S.msg = {text: String(job.error || "A análise falhou. Tenta outra vez.")};
+      }
+      S.watch = null;
+    }
+  }
+  renderControls();
+  renderHistory();
+}
+let pollTimer = null;
+function schedule() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(async () => { if (!document.hidden) await load(); schedule(); }, S.wait ? 2000 : 15000);
+}
+/* back on the page: failures from before it was hidden say nothing about now, the minute starts again */
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { S.failAt = 0; load().then(schedule); } });
+/* the page's own clock: the seconds on screen. By itself it never ends a wait as "the computer did not answer":
+   that takes an answer asked for after the 40 s (see waitKind), which the 2 s poll above brings */
+setInterval(() => { if (S.wait && !document.hidden) step(); }, 1000);
+
+/* ---------------------------------------------------------------- controls: banners, button, waiting line */
+function setStatus(kind, text, secs) {
+  const el = $("#status"), key = kind + "|" + text;
+  if (el.dataset.key !== key) {
+    el.dataset.key = key;
+    el.innerHTML = !text ? "" : `<div class="status${kind === "bad" ? " bad" : ""}">${kind === "run" ? '<i class="spin" aria-hidden="true"></i>' : ""}<span>${esc(text)}</span><span class="secs" aria-hidden="true"></span></div>`;
+  }
+  const s = $(".secs", el);
+  if (s) s.textContent = secs || "";
+}
+function renderControls() {
+  const st = S.state, run = (st && st.runner) || {};
+  const aiOff = !!st && !!st.ai && st.ai.enabled === false;
+  const pcOff = !!st && !!window.DESKBOT_REMOTE && (run.owner !== "pc" || run.age_s > 120);
+  const rows = [];
+  if (aiOff) rows.push(["warn", "A IA está desligada neste computador", "Sem ela não há análise."]);
+  if (pcOff) rows.push(["bad", "Sem sinal do computador", "O computador está desligado ou a dormir: a análise precisa dele ligado."]);
+  const html = rows.map(([c, t, b]) => `<div class="hrow ${c}"><b>${esc(t)}</b> · ${esc(b)}</div>`).join("");
+  if ($("#banners").dataset.html !== html) { $("#banners").dataset.html = html; $("#banners").innerHTML = html; }
+
+  const has = !!S.shot, opening = S.opening;
+  const waiting = S.sending || !!S.wait, busy = !S.wait && S.phase === "busy";
+  $("#go").disabled = !has || opening || waiting || busy || aiOff || pcOff;
+  $("#why").textContent = waiting || busy || aiOff || pcOff ? "" : opening ? "A preparar a imagem…" : !has ? "Põe um screenshot para analisar." : "";
+
+  if (S.sending) setStatus("run", "A enviar…");
+  else if (S.wait && S.phase === "analysing") setStatus("run", "A analisar…", Math.max(0, Math.round((Date.now() - S.wait.since) / 1000)) + " s");
+  else if (S.wait) setStatus("run", "À espera do computador…");
+  else if (busy) setStatus("run", "Há uma análise a decorrer");
+  else if (S.msg) setStatus("bad", S.msg.text);
+  else setStatus("", "");
+}
+
+/* ---------------------------------------------------------------- result */
+const when = iso => { const d = new Date(iso); return iso && isFinite(d) ? d.toLocaleString("pt-PT", {day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"}) : "—"; };
+const tfList = tfs => (Array.isArray(tfs) ? tfs : []).map(tfLabel).join(" · ");
+const list = v => (Array.isArray(v) ? v : []).filter(x => x != null && String(x).trim() !== "");
+const sideChip = m => `<span class="chip ${m.dir === "long" ? "done" : "armed"}">${esc(m.lado)}</span>`;
+/* lm: the same option with the leverage chosen (levModel); its lines are only there for an option that counts */
+function levels(m, lm) {
+  const wide = [m.entrada, m.stop, m.alvo].some(s => s.length > 8);     // a long price gets a row of its own, never cut in two
+  const sm = fmtMargem(lm && lm.stopMargem), am = fmtMargem(lm && lm.alvoMargem);
+  return `<div class="lvl${wide ? " wide" : ""}"><div><span>Entrada</span><b>${esc(m.entrada)}</b></div>` +
+    `<div><span>Stop</span><b>${esc(m.stop)}</b>${m.stopPct ? `<small>a ${esc(m.stopPct)}</small>` : ""}${sm ? `<small class="down">${esc(sm)} da margem</small>` : ""}</div>` +
+    `<div><span>Alvo</span><b>${esc(m.alvo)}</b>${m.alvoPct ? `<small>a ${esc(m.alvoPct)}</small>` : ""}${am ? `<small class="up">${esc(am)} da margem</small>` : ""}</div></div>`;
+}
+function levNote(lm) {
+  const said = levWarning(lm);
+  return said ? `<p class="lw ${lm.aviso === "depois" ? "bad" : "warn"}">${esc(said)}${lm.aviso === "depois" ? " Perdias a margem toda antes de o preço lá chegar." : ""}</p>` : "";
+}
+/* the leverage chooser, drawn with the result: it only changes how the numbers of the options are shown */
+function levBar(lev) {
+  const liq = levModel(null, lev).liqPct;
+  return `<div class="panel"><div class="levrow"><h3 id="h-lev">Alavancagem</h3><div class="seg lev" role="group" aria-labelledby="h-lev">` +
+    LEVS.map(l => `<button type="button" data-lev="${l}" aria-pressed="${l === lev}">${l}x</button>`).join("") + `</div></div>` +
+    `<p class="help">Só muda a forma de mostrar os números: nada é enviado nem aberto. Com ${esc(lev)}x a liquidação fica a cerca de ${esc(fmt(liq, 0, 1))}% do preço. ` +
+    `Os valores ignoram comissões e funding, e a distância à liquidação é aproximada (margem isolada).</p></div>`;
+}
+const evClass = m => m.evSign > 0 ? "up" : m.evSign < 0 ? "down" : "";
+function heroCard(h, lm) {
+  if (h.fora) return `<div class="hero fora"><div class="k">Melhor opção</div><p class="big">Ficar de fora</p><p class="because">${esc(h.motivo)}</p></div>`;
+  const sm = fmtMargem(lm && lm.stopMargem), am = fmtMargem(lm && lm.alvoMargem);
+  return `<div class="hero ${h.dir}"><div class="k">Melhor opção</div><p class="big">${esc(h.titulo)}</p>
+    <p class="nm">${esc(h.nome)}${h.tipo || h.tf ? ` <small>${esc([h.tipo, h.tf].filter(Boolean).join(" · "))}</small>` : ""}</p>
+    ${h.motivo ? `<p class="because">${esc(h.motivo)}</p>` : ""}
+    ${levels(h, lm)}
+    ${levNote(lm)}
+    <div class="kv">
+      <div><span>R:R</span><span class="mono">${esc(h.rr)}</span></div>
+      <div><span>Probabilidade estimada</span><span><b class="mono">${esc(h.prob)}</b>${h.contada ? `<br><span class="t2" style="font-size:13px">${esc(h.contada)}</span>` : ""}</span></div>
+      <div class="ev"><span>Valor esperado ${esc(h.evQuando)}</span><span class="mono ${evClass(h)}"><b>${esc(h.ev)}</b></span>${h.evNota ? `<small>${esc(h.evNota)}</small>` : ""}</div>
+      <div><span>Distância no preço</span><span class="mono">stop&nbsp;${esc(h.stopPct || "—")} · alvo&nbsp;${esc(h.alvoPct || "—")}</span></div>
+      ${sm || am ? `<div><span>Com ${esc(lm.lev)}x, da margem</span><span class="mono">stop&nbsp;<b class="down">${esc(sm || "—")}</b> · alvo&nbsp;<b class="up">${esc(am || "—")}</b></span></div>` : ""}
+    </div>
+    ${h.equilibrio ? `<p class="txt t2" style="font-size:14px">${esc(h.equilibrio)}.</p>` : ""}
+    ${h.gatilho ? `<p class="txt"><span class="k">Gatilho</span>${esc(h.gatilho)}</p>` : ""}
+    ${h.porque ? `<p class="txt"><span class="k">Porquê</span>${esc(h.porque)}</p>` : ""}</div>`;
+}
+function optionCard(o, rank, lev) {
+  const m = optionModel(o), lm = levModel(o, lev);
+  return `<div class="opt${m.valida ? "" : " bad"}"><div class="oh"><span class="rank" aria-hidden="true">${rank}</span><b>${esc(m.nome || m.titulo)}</b>${sideChip(m)}</div>
+    ${m.tipo || m.tf ? `<p class="nm"><small>${esc([m.tipo, m.tf].filter(Boolean).join(" · "))}</small></p>` : ""}
+    ${levels(m, lm)}
+    ${levNote(lm)}
+    ${m.valida ? `<p class="nums">R:R <b>${esc(m.rr)}</b> · prob. <b>${esc(m.prob)}</b>${m.contada ? ` (${esc(m.contada)})` : ""} · valor esperado ${esc(m.evQuando)} <b class="${evClass(m)}">${esc(m.ev)}</b>${m.evNota ? `<br>${esc(m.evNota)}` : ""}</p>
+      ${m.equilibrio ? `<p class="sm">${esc(m.equilibrio)}.</p>` : ""}`
+               : `<p class="prob"><b>Não conta:</b> ${esc(m.problema || "os níveis não fazem sentido.")}</p>`}
+    ${m.gatilho ? `<p class="sm"><b class="t3">Gatilho</b> ${esc(m.gatilho)}</p>` : ""}
+    ${m.porque ? `<p class="sm">${esc(m.porque)}</p>` : ""}</div>`;
+}
+function scenario(c) {
+  const p = Math.max(0, Math.min(100, Math.round(num(c.prob) || 0))), dir = ["alta", "baixa", "lateral"].includes(c.direcao) ? c.direcao : "";
+  return `<div class="scn"><div class="row"><b>${esc(trendWord(c.direcao))}</b><span>${esc(fmtPct(p, 0))}</span></div>
+    <div class="bar ${dir}" role="img" aria-label="${esc(trendWord(c.direcao))}: ${esc(fmtPct(p, 0))}"><i style="width:${p}%"></i></div>
+    ${c.gatilho ? `<p><b>Gatilho</b> ${esc(c.gatilho)}</p>` : ""}${c.descricao ? `<p>${esc(c.descricao)}</p>` : ""}</div>`;
+}
+function reading(l) {
+  const chip = {alta: "done", baixa: "armed"}[l.tendencia] || "";
+  const prices = v => { const a = list(v).map(fmtPrice); return a.length ? a.join(" · ") : "—"; };
+  const pads = list(l.padroes);
+  return `<div class="rd"><div class="oh"><b>${esc(tfLabel(l.tf))}</b><span class="chip ${chip}">${esc(trendWord(l.tendencia))}</span></div>
+    ${l.estrutura ? `<p>${esc(l.estrutura)}</p>` : ""}
+    <div class="kv"><div><span>Suportes</span><span class="mono">${esc(prices(l.suportes))}</span></div><div><span>Resistências</span><span class="mono">${esc(prices(l.resistencias))}</span></div></div>
+    ${pads.length ? `<p><b>Padrões</b> ${esc(pads.join(" · "))}</p>` : ""}
+    ${l.volume_indicadores ? `<p><b>Volume e indicadores</b> ${esc(l.volume_indicadores)}</p>` : ""}</div>`;
+}
+const bullets = items => `<ul class="rlist">${items.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+function resultHtml(x) {
+  const r = x.result || {}, out = [];
+  const head = [when(x.at), tfList(x.tfs)].filter(s => s && s !== "—").join(" · ");
+  out.push(`<div class="sh"><h2>${esc(r.ativo || "Resultado")}</h2>${num(r.preco_atual) != null ? `<span>preço ${esc(fmtPrice(r.preco_atual))}</span>` : ""}</div>`);
+  if (head) out.push(`<p class="rcap">análise de ${esc(head)}</p>`);
+  if (r.legivel === false) out.push(`<div class="panel"><h3>Não consegui ler este gráfico</h3><p class="empty" style="padding-bottom:0">${esc(r.motivo_ilegivel || "A imagem não dá para ler com segurança.")}</p></div>`);
+  if (r.resumo) out.push(`<p class="rsum">${esc(r.resumo)}</p>`);
+  const h = heroModel(r), ops = Array.isArray(r.opcoes) ? r.opcoes : [], lev = levPick(S.lev);
+  /* the chooser only where it changes something: with at least one option that counts and has its distances */
+  if (ops.some(o => { const lm = levModel(o, lev); return lm.stopMargem != null || lm.alvoMargem != null; })) out.push(levBar(lev));
+  if (r.legivel !== false || r.melhor) out.push(heroCard(h, h.fora ? null : levModel(ops[h.index], lev)));
+  const rest = ops.map((o, i) => [o, i]).filter(([, i]) => i !== h.index);
+  if (rest.length) out.push(`<div class="sh"><h2>Todas as opções</h2><span>por valor esperado</span></div>` + rest.map(([o, i]) => optionCard(o, i + 1, lev)).join(""));
+  const scn = list(r.cenarios);
+  if (scn.length) out.push(`<div class="sh"><h2>Cenários</h2></div><div class="panel">${scn.map(scenario).join("")}</div>`);
+  const rds = list(r.leituras);
+  if (rds.length || r.confluencia) out.push(`<div class="sh"><h2>Leitura do gráfico</h2></div><div class="panel">${rds.map(reading).join("")}${r.confluencia ? `<div class="rd"><div class="oh"><b class="s">Confluência</b></div><p>${esc(r.confluencia)}</p></div>` : ""}</div>`);
+  const risks = list(r.riscos), unseen = list(r.nao_se_ve);
+  if (risks.length) out.push(`<div class="panel"><h3>Riscos</h3>${bullets(risks)}</div>`);
+  if (unseen.length) out.push(`<div class="panel"><h3>O que não se vê na imagem</h3>${bullets(unseen)}</div>`);
+  return out.join("");
+}
+function renderResult() {
+  const x = S.shown;
+  $("#result-wrap").hidden = !x;
+  $("#result").innerHTML = x ? resultHtml(x) : "";
+  S.histKey = ""; renderHistory();
+}
+function show(x, focus) {
+  S.shown = x; renderResult();
+  if (!focus) return;
+  const el = $("#result-wrap");
+  try { el.focus({preventScroll: true}); } catch (e) {}
+  el.scrollIntoView({behavior: REDUCED ? "auto" : "smooth", block: "start"});
+}
+/* another leverage: the result on screen (a new one or one of the last analyses) is drawn again with it. Nothing is
+   asked of the bot; the choice is remembered on this device when it can be */
+$("#result").addEventListener("click", e => {
+  const b = e.target && e.target.closest ? e.target.closest("button[data-lev]") : null;
+  if (!b) return;
+  const lev = levPick(b.dataset.lev);
+  if (lev === S.lev) return;
+  S.lev = lev; store.set(LEV_KEY, String(lev));
+  renderResult();
+  const again = $(`#result button[data-lev="${lev}"]`);      // the button was drawn again: the focus goes back to it
+  if (again) try { again.focus({preventScroll: true}); } catch (err) {}
+});
+
+/* ---------------------------------------------------------------- last analyses */
+function renderHistory() {
+  const rows = ((S.state && S.state.history) || []).filter(h => h && h.result).slice(0, 6);
+  const key = rows.map(h => h.id + "@" + h.at).join(",") + "|" + (S.shown ? S.shown.id : "");
+  if (key === S.histKey) return;            // only when something changed, so a tap or the focus is never lost to a refresh
+  S.histKey = key;
+  $("#hist-wrap").hidden = !rows.length;
+  $("#hist").innerHTML = rows.map((h, i) => {
+    const r = h.result || {}, hm = r.legivel === false ? null : heroModel(r);
+    const act = !hm ? "Ilegível" : hm.fora ? "Ficar de fora" : hm.titulo, c = !hm || hm.fora ? "t2" : hm.dir === "long" ? "up" : "down";
+    const cur = !!S.shown && String(S.shown.id) === String(h.id);
+    return `<button class="hist" type="button" data-i="${i}" aria-current="${cur}"><span class="mid"><b>${esc(r.ativo || "Gráfico")}</b><span>${esc(when(h.at))}${tfList(h.tfs) ? " · " + esc(tfList(h.tfs)) : ""}</span></span><span class="rt ${c}">${esc(act)}</span></button>`;
+  }).join("");
+  $$("#hist .hist").forEach(b => b.addEventListener("click", () => { const h = rows[+b.dataset.i]; show({id: String(h.id), result: h.result, at: h.at, tfs: h.tfs}, true); }));
+}
+
+/* ---------------------------------------------------------------- start */
+paintSlot();
+paintTf();
+renderControls();
+load().then(schedule);
+</script>
+</body>
+</html>

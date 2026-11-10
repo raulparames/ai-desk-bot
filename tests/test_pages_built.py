@@ -12,7 +12,7 @@ spec.loader.exec_module(build_pages)
 
 
 @pytest.mark.parametrize("built, source", [("index.html", "app.html"), ("memes.html", "memes.html"),
-                                           ("perps.html", "memes.html")])
+                                           ("perps.html", "memes.html"), ("grafico.html", "grafico.html")])
 def test_the_phone_pages_are_the_ones_on_disk(built, source):
     want = build_pages.rewrite((build_pages.STATIC / source).read_text(encoding="utf-8"))
     assert (build_pages.OUT / built).read_text(encoding="utf-8") == want, "run: python deploy/build_pages.py"
