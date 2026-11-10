@@ -252,6 +252,8 @@ def pc_loop(stop: threading.Event | None = None):
     last_files = 0.0
     from .push import Pusher
     pusher = Pusher(relay)   # lock-screen notifications for the memes and futures sessions
+    from .watch import Arm
+    arm = Arm(relay, "pc")   # Supabase tells the phone if this PC goes quiet during a session
     while not stop.is_set():
         tick = time.time()
         try:
@@ -273,6 +275,7 @@ def pc_loop(stop: threading.Event | None = None):
                     pusher.tick()
                 except Exception as exc:   # a failed notification must never stop the relay
                     log.warning("Push tick failed: %s", exc)
+                _safe(arm.tick)
             m = _mtime(ROOT / "phone_password.json")
             if m != pw_mtime:
                 relay.set_password_from_file()
@@ -280,6 +283,7 @@ def pc_loop(stop: threading.Event | None = None):
         except Exception as exc:
             log.warning("Relay tick failed: %s", exc)
         stop.wait(max(1.0, 5 - (time.time() - tick)))
+    _safe(arm.off)   # stopped on purpose: no silence to tell
 
 
 def pull_before_cycle():
@@ -341,6 +345,8 @@ def _gh_session(relay: Relay, session: dict):
     _GH_SESSION.set()
     from .push import Pusher
     notes = Pusher(relay)
+    from .watch import Arm
+    arm = Arm(relay, "github", only=_GH_KIND["desk"])   # Supabase tells the phone if this job dies mid-session
     _safe(lambda: _adopt_silences(relay))   # the other desk's dead session, already told: named as this disk reads it
     _safe(notes.tick)        # first look: whatever is already in the files is not announced
 
@@ -355,6 +361,7 @@ def _gh_session(relay: Relay, session: dict):
             except Exception as exc:
                 log.warning("session push failed: %s", exc)
             _safe(notes.tick)
+            _safe(arm.tick)
 
     t = threading.Thread(target=pusher, daemon=True)
     t.start()
@@ -363,7 +370,12 @@ def _gh_session(relay: Relay, session: dict):
     finally:
         done.set()
         _GH_SESSION.clear()
-        t.join(timeout=10)
+        t.join(timeout=30)   # its last arm.tick must not come after the off below
+        for _ in range(3):   # the session is over: its silence is no news (nobody else turns this switch off)
+            _safe(arm.off)
+            if arm.armed is False:
+                break
+            time.sleep(5)
         relay.push(app_items("github"), force=True)
         relay.push_files()
         _safe(notes.tick)    # the last sells and the end of the session
@@ -411,7 +423,7 @@ def _tell_dead_sessions(relay: Relay, rn: dict) -> list[str]:
     notes = push.Pusher(relay)
     if not notes.enabled:
         return []
-    told, done = [], None
+    told, done, watch = [], None, {}
     for desk, path in push.DESKS.items():
         try:
             st = json.loads(path.read_text(encoding="utf-8"))
@@ -433,6 +445,12 @@ def _tell_dead_sessions(relay: Relay, rn: dict) -> list[str]:
         if saved is None and told_it.rpartition("@")[0] == started:
             # the old code writes no "saved", and the relay's date moves when the PC pushes its copy again: there
             continue                     # only the session start says that this silence was already told
+        state, claim = _watch_state(relay, desk, started, wrote, watch)
+        if state == "wait":
+            continue                     # Supabase is telling it: the next cycle sees whether it got through
+        if state == "told":
+            relay.push({"push:seen:" + desk: {**rec, "stall": silence}})   # Supabase's switch told the phone
+            continue
         n = len(st.get("positions") or [])
         # the computer's silence is all that is known here (the session may still be watching its stops)
         what = ("não tinha posições abertas" if not n else
@@ -442,11 +460,67 @@ def _tell_dead_sessions(relay: Relay, rn: dict) -> list[str]:
                         "na última vez. Vê o computador. Papel."),
                "url": push.PAGES[desk], "tag": f"{desk}-stall-{silence}"}
         notes.refresh()
-        if notes.subs and not notes.send(msg):
+        delivered = not notes.subs or bool(notes.send(msg))
+        if claim:                        # ours to tell: told, or handed back to Supabase to try
+            _safe(lambda: relay.rpc("runner_watch_result", {"p_runner": claim[0], "p_gen": claim[1],
+                                                            "p_delivered": delivered}))
+        if not delivered:
             continue                     # it reached nobody: the next cycle tries again
         relay.push({"push:seen:" + desk: {**rec, "stall": silence}})
         told.append(desk)
     return told
+
+
+WATCH_WAIT_S = 600   # a silence Supabase claimed and has not got through yet: its tries take a few minutes
+
+
+def _names(rec: dict, desk: str, started: str) -> bool:
+    return any(isinstance(d, dict) and d.get("desk") == desk and str(d.get("started")) == started
+               for d in rec.get("desks") or [])
+
+
+def _watch_state(relay: Relay, desk: str, started: str, wrote: float, cache: dict) -> tuple[str, tuple | None]:
+    """Supabase's switch (deskbot/watch.py) and this cycle may both see the same silence; the first to
+    claim it tells it, and it counts as told only once a push service took it. Answers:
+    "told"  Supabase got it through, for this session, after it last wrote: only recorded here;
+    "wait"  Supabase claimed it and is still trying: the next cycle looks again;
+    "send"  this cycle tells it. With a claim (runner, gen) of its own, the result goes back to the relay
+            (runner_watch_result), and a claim it could not deliver is handed back to Supabase.
+    A relay that cannot be read or claimed leaves it to this cycle: twice is better than never."""
+    if "rows" not in cache:
+        try:
+            cache["rows"] = {k: (v or {}).get("value") or {} for k, v in relay.get("watch:").items()}
+        except Exception as exc:
+            log.warning("watch: switch not read: %s", exc)
+            cache["rows"] = {}
+    rows = cache["rows"]
+    for runner in ("pc", "github"):
+        fired = rows.get(f"watch:fired:{runner}") or {}
+        if (isinstance(fired, dict) and fired.get("by") == "supabase" and fired.get("delivered")
+                and _names(fired, desk, started) and (_stamp(fired.get("at")) or 0) >= wrote - 60):
+            return "told", None          # this silence (the switch was claimed after the session last wrote)
+    for runner in ("pc", "github"):
+        arm = rows.get(f"watch:arm:{runner}") or {}
+        if not (isinstance(arm, dict) and arm.get("active") and arm.get("gen") and _names(arm, desk, started)):
+            continue
+        gen = str(arm["gen"])
+        if (runner, gen) not in cache:
+            try:
+                cache[(runner, gen)] = relay.rpc("runner_watch_claim", {"p_runner": runner, "p_gen": gen}) or {}
+            except Exception as exc:
+                log.warning("watch: claim failed: %s", exc)
+                cache[(runner, gen)] = {}
+        claim = cache[(runner, gen)]
+        if not isinstance(claim, dict) or not claim:
+            return "send", None
+        if claim.get("by") == "github":
+            return "send", (runner, gen)
+        if claim.get("delivered"):
+            return "told", None
+        if claim.get("failed") or time.time() - (_stamp(claim.get("at")) or 0) > WATCH_WAIT_S:
+            return "send", None          # Supabase gave up on it
+        return "wait", None
+    return "send", None
 
 
 def _adopt_silences(relay: Relay):

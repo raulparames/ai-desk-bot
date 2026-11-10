@@ -156,6 +156,7 @@ class Pusher:
         self.tries: dict[str, int] = {}           # desk -> ticks its next notification reached nobody
         self._quiet: dict[str, int] = {}          # desk -> ticks in a row its state file looked dead
         self._tick_at = 0.0
+        self._woke = 0.0                          # when this runner last came back from a sleep
         self.http = requests.Session()
 
     @property
@@ -221,7 +222,12 @@ class Pusher:
             return
         self.refresh()
         now = time.time()
-        away, self._tick_at = now - self._tick_at > 60, now      # this runner was itself asleep: files look old for no reason
+        if self._tick_at and now - self._tick_at > 60:
+            self._woke = now      # this runner was itself asleep: the sessions slept too and need a moment to write
+        # files look old for no reason on the first tick and for STALL_S after a wake (that silence was the
+        # whole computer's, which Supabase's switch tells: deskbot/watch.py)
+        away = now - self._tick_at > 60 or now - self._woke < STALL_S
+        self._tick_at = now
         for desk, path in DESKS.items():
             try:
                 st = json.loads(path.read_text(encoding="utf-8"))
