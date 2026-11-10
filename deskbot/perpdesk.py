@@ -14,11 +14,17 @@ pairs and prices of Hyperliquid, the exchange the INVO app trades on.
           (15-min ATR between 0.15% and 3%, the coin allows the leverage). Needs risk ok and 4 votes.
   ROUTER  Hyperliquid's order book for the trade size: spread of 0.05% or less and a fill within
           0.10% of the mid.
-  EXEC    paper fill walking the book plus the 0.045% taker fee. Compounder sizing: margin 40% of the
-          free cash at the session's leverage (max 10x, never more than the coin allows), at most 2 open,
-          one new trade every 2 min. Prices every 5 s: stop 1.5 ATR; at +2R (twice the stop distance)
-          half is closed and the stop moves to the entry; the rest trails 1.5 ATR off its best price.
-          Liquidation when the margin is gone, funding charged by the hour.
+  EXEC    paper fill walking the book plus the 0.045% taker fee. Sizing by risk: a stop-out costs about
+          1% of the equity (half of that when a position on the same side is already open, 2% open at
+          most), at the lowest leverage that fits (never above the session's, the coin's, or one that puts
+          liquidation closer than twice the stop). At most 2 open, one new trade every 2 min. The price is
+          checked again at the open: no entry if it ran 0.5 ATR away or broke 1 ATR back since the signal.
+          Prices every 5 s: stop 1.5 ATR; at +2R (twice the stop distance) half is closed and the stop
+          moves to the entry; the rest trails 1.5 ATR off its best price. Liquidation when the margin is
+          gone, funding charged by the hour.
+  GUARD   brakes on new entries only (guard.py): session -10%, day -6%, 3 losses in a row; a coin that
+          just lost rests 2 h. A gap of more than 2 min without price checks (sleep, lost feed) is said
+          out loud, and the stop or the liquidation it hid is booked from the 1-minute candles.
   CORE    opens only when all five agree (5/5).
 
 The app shows the same five cards as the memes mode: SCANNER (TRENDS + SMARTS), ANALYST (DEBATE + ROUTER,
@@ -43,7 +49,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from . import hl_live
+from . import guard, hl_live
 from .config import ROOT
 
 log = logging.getLogger("perpdesk")
@@ -59,13 +65,17 @@ AGENT_OF = {"TRENDS": "SCANNER", "SMARTS": "SCANNER", "DEBATE": "ANALYST", "ROUT
 REPOS = {
     "SCANNER": ("freqtrade/freqtrade", "tendência EMA 20/50 · top traders da Hyperliquid"),
     "ANALYST": ("TauricResearch/TradingAgents", "debate bull/bear · risco · livro de ordens · nota 0–100"),
-    "COMPOUNDER": ("hyperliquid-dex/hyperliquid-python-sdk", "margem 40% do saldo livre · máx. 2 abertas"),
+    "COMPOUNDER": ("hyperliquid-dex/hyperliquid-python-sdk", "risco de 1% por trade · máx. 2 abertas"),
     "EXECUTOR": ("ccxt/ccxt", "preenche no livro · taxa 0,045%"),
     "RISK": ("nautechsystems/nautilus_trader", "metade a 2R · stop na entrada · trailing · liquidação"),
 }
 BUCKET = {"TRENDS": "trends", "SMARTS": "smarts", "DEBATE": "debate", "ROUTER": "router", "EXEC": "exec",
           "CORE": "core"}
 LEVERAGES = (2, 5, 10)
+GAP_S = 120            # longer than this between two price checks is time without watching (sleep, lost feed)
+PAUSE_AFTER_GAP_S = 300
+MISS_ALERT = 3         # price readings in a row without an answer before the app is told
+CURVE_EVERY_S = 30
 
 
 @dataclass
@@ -79,7 +89,12 @@ class PerpParams:
     min_traders: int = 3
     max_spread: float = 0.0005
     max_impact: float = 0.0010
-    margin_pct: float = 0.40      # Compounder: of the free cash
+    margin_pct: float = 0.40      # ceiling: the margin of one trade is never above this share of the free cash
+    risk_pct: float = 0.01        # what one stop-out may cost, of the equity
+    max_heat: float = 0.02        # what all open stops together may cost, of the equity
+    loss_cooldown_min: float = 120   # a coin that just closed at a loss rests this long
+    chase_open_atr: float = 0.5   # no entry if the price ran this far from the signal by the time of the open
+    break_open_atr: float = 1.0   # nor if it came back this far
     max_positions: int = 2
     open_every_s: float = 120
     stop_atr: float = 1.5
@@ -113,6 +128,7 @@ class Perp:
     half_done: bool = False
     half_px: float = 0.0
     half_ts: int = 0
+    blind: bool = False       # lived through a gap without price checks
 
 
 @dataclass
@@ -138,6 +154,14 @@ class PerpState:
     venue: str = "invo"
     feeds: dict = field(default_factory=dict)
     live: dict = field(default_factory=dict)      # Hyperliquid dry-run: the real orders, never sent
+    guard: dict = field(default_factory=dict)     # the brakes on new entries (guard.py)
+    tick_ms: int = 0              # how long the last price check took
+    max_tick_ms: int = 0
+    rate_limited: int = 0         # 429 answers from Hyperliquid
+    risk_errors: int = 0
+    feed_stale: bool = False      # prices are not arriving: stops are not being watched
+    blind_s: float = 0.0          # time without price checks this session
+    max_gap_s: float = 0.0
 
 
 def _now() -> datetime:
@@ -197,7 +221,15 @@ class PerpDesk:
         self.events_file = OUT / "events.jsonl"
         self.events_file.write_text("", encoding="utf-8")
         self.lock = threading.RLock()
-        self.stop = threading.Event()
+        self.stop = threading.Event()         # ends the price-check thread
+        self.quit = threading.Event()         # "stop" from the app: the main loop leaves at once
+        self.stale = threading.Event()        # a gap was seen: signals found before it are thrown away
+        self.guard = guard.Guard(OUT, eur * rate)
+        self.no_new_until = 0.0
+        self._misses, self._miss_since = 0, 0.0
+        self._fails: dict[str, int] = {}
+        self._loop_at = 0.0
+        self._curve_at = 0.0
         self.meta: dict[str, dict] = {}       # coin -> {max_lev, funding, mark, vol, oi, day_pct}
         self.crowd: dict[str, dict] = {}      # coin -> top traders' positions
         self.crowd_at = 0.0
@@ -216,26 +248,32 @@ class PerpDesk:
         except (requests.RequestException, KeyError, ValueError):
             return 1.10
 
-    def info(self, body: dict, session: requests.Session | None = None):
-        for attempt in range(3):
+    def info(self, body: dict, session: requests.Session | None = None, *, timeout: float = 15, tries: int = 3):
+        """The price check calls this with a short timeout and one try: a slow answer must not hold the stops."""
+        for attempt in range(tries):
+            last = attempt == tries - 1
             try:
-                r = (session or self.http).post(INFO, json=body, timeout=15)
+                r = (session or self.http).post(INFO, json=body, timeout=timeout)
                 if r.status_code == 429:
-                    time.sleep(5 * (attempt + 1))
+                    self.d.rate_limited += 1
+                    if not last:
+                        time.sleep(5 * (attempt + 1))
                     continue
                 r.raise_for_status()
                 return r.json()
             except (requests.RequestException, ValueError) as exc:
                 log.warning("Hyperliquid %s failed: %s", body.get("type"), exc)
-                time.sleep(2)
+                if not last:
+                    time.sleep(2)
         self.d.api_errors += 1
         return None
 
-    def candles(self, coin: str, interval: str, bars: int) -> list[dict]:
-        ms = {"15m": 900_000, "1h": 3_600_000}[interval]
+    def candles(self, coin: str, interval: str, bars: int, session=None, **kw) -> list[dict]:
+        ms = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000}[interval]
         now = int(time.time() * 1000)
         raw = self.info({"type": "candleSnapshot", "req": {"coin": coin, "interval": interval,
-                                                           "startTime": now - bars * ms, "endTime": now}}) or []
+                                                           "startTime": now - bars * ms, "endTime": now}},
+                        session, **kw) or []
         return [{"t": int(c["t"]), "o": _f(c["o"]), "h": _f(c["h"]), "l": _f(c["l"]), "c": _f(c["c"]), "v": _f(c["v"])}
                 for c in raw]
 
@@ -293,22 +331,37 @@ class PerpDesk:
     # ------------------------------------------------------------ bookkeeping
     def event(self, stage: str, coin: str, verdict: str, reason: str = "", **values):
         """stage is the step inside an agent (TRENDS, SMARTS, ...); the app shows the agent."""
-        agent = "RISK" if verdict == "sell" else AGENT_OF.get(stage, stage)
+        agent = "RISK" if verdict in ("sell", "alert") else AGENT_OF.get(stage, stage)
         e = {"ts": _now().isoformat(timespec="seconds"), "agent": agent, "stage": stage, "coin": coin,
              "verdict": verdict, "reason": reason, **values}
         with self.lock:
             self.d.events.append(e)
-            with self.events_file.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+            try:
+                with self.events_file.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(e, ensure_ascii=False) + "\n")
+            except OSError as exc:        # the session and its exits matter more than the log file
+                log.warning("events.jsonl not written: %s", exc)
             if verdict in ("reject", "skip", "kill"):
                 c = self.d.counts.setdefault(BUCKET.get(stage, "core"), {})
                 key = reason.split(":")[0]
                 c[key] = c.get(key, 0) + 1
-            if agent in self.d.agents and verdict != "wait":
+            if agent in self.d.agents and verdict not in ("wait", "alert"):
                 self.d.agents[agent] = {"coin": coin, "text": reason, "ok": verdict in ("pass", "buy", "sell"),
                                         "ts": e["ts"], "verdict": verdict,
                                         **{k: values[k] for k in ("score", "eur", "fill_s", "kind", "side") if k in values}}
         log.info("%-7s %-6s %-6s %s", stage, coin, verdict, reason)
+
+    def alert(self, text: str, coin: str = "—"):
+        """Something the owner must know (a brake, a gap, a dead feed). The app and the phone show it."""
+        self.event("RISK", coin, "alert", text)
+
+    def _bridge(self, name: str, *args):
+        """The dry-run bridge writes orders down; whatever happens in it, the paper desk carries on."""
+        try:
+            return getattr(self.live, name)(*args)
+        except Exception:
+            log.exception("dry-run bridge %s failed, paper desk carries on", name)
+            return None
 
     def value(self, q: Perp) -> float:
         return max(0.0, q.margin + q.side * q.qty * (q.last - q.entry) - q.funding)
@@ -317,11 +370,14 @@ class PerpDesk:
         with self.lock:
             return self.d.cash + sum(self.value(q) for q in self.d.positions)
 
-    def save(self):
+    def save(self, final: bool = False):
         with self.lock:
-            self.d.live = self.live.summary()
+            self.d.live = self._bridge("summary") or self.d.live
+            self.d.guard = self.guard.state()
             eq = self.equity()
-            self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
+            if final or time.time() - self._curve_at >= CURVE_EVERY_S:
+                self._curve_at = time.time()
+                self.d.curve.append([int(time.time() * 1000), round(eq, 4)])
             state = asdict(self.d)
             state["ready"] = [{"coin": r["coin"], "side": r["side"], "score": r["score"]} for r in self.ready]
         state["events"] = state["events"][-200:]
@@ -335,6 +391,7 @@ class PerpDesk:
                 return
             except PermissionError:
                 time.sleep(0.2)
+        log.warning("state.json not replaced (file busy): the app shows the previous state until the next save")
 
     # ------------------------------------------------------------ TRENDS
     def scan(self):
@@ -344,13 +401,15 @@ class PerpDesk:
         with self.lock:
             busy = {q.coin for q in self.d.positions} | {r["coin"] for r in self.ready} | {c for c, _, _ in self.queue}
         for coin in coins:
+            if self.quit.is_set():
+                break
             if coin in busy or self.cool.get(coin, 0) > time.time():
                 continue
             self.trends(coin)
 
     def trends(self, coin: str):
         c = self.candles(coin, "15m", 120)
-        self.cool[coin] = time.time() + self.p.cooldown_min * 60
+        self.cool[coin] = max(self.cool.get(coin, 0.0), time.time() + self.p.cooldown_min * 60)
         if len(c) < 60:
             return
         closes = [b["c"] for b in c]
@@ -383,8 +442,10 @@ class PerpDesk:
         votes["DEBATE"] = debate["ok"]
         if not debate["ok"]:
             return
-        size = self.margin() * self.leverage(coin)
-        route = self.router(coin, side, size)
+        size = self.size(coin, side, ctx["atr"], ctx["px"])
+        if not size["ok"]:
+            return self.event("ROUTER", coin, "reject", size["why"])
+        route = self.router(coin, side, size["notional"])
         votes["ROUTER"] = route["ok"]
         if not route["ok"]:
             return
@@ -397,7 +458,8 @@ class PerpDesk:
         name = "long" if side == 1 else "short"
         self.event("CORE", coin, "pass", f"passou · {name} · nota {score} · 5/5 de acordo", votes=votes, side=name,
                    score=score)
-        self.ready.append({"coin": coin, "side": side, "score": score, "since": time.time(), "atr": ctx["atr"]})
+        self.ready.append({"coin": coin, "side": side, "score": score, "since": time.time(), "atr": ctx["atr"],
+                           "px": ctx["px"]})
         self.event("EXEC", coin, "wait", f"na fila: {name} com nota {score}")
 
     # ------------------------------------------------------------ SMARTS
@@ -488,16 +550,58 @@ class PerpDesk:
         return {"ok": ok, "score": 100 if f["impact"] < 0.0003 else 80}
 
     # ------------------------------------------------------------ EXEC (open)
-    def margin(self) -> float:
-        """Compounder: 40% of the free cash (wins roll into the next trade)."""
-        with self.lock:
-            return self.d.cash * self.p.margin_pct
-
     def leverage(self, coin: str) -> float:
         return float(min(self.d.lev, self.meta.get(coin, {}).get("max_lev", 1)))
 
+    def open_risk(self) -> float:
+        """What the open positions lose if every stop is hit (0 once a stop sits at the entry)."""
+        with self.lock:
+            return sum(q.qty * max(0.0, q.side * (q.entry - q.stop)) for q in self.d.positions)
+
+    def size(self, coin: str, side: int, a: float, px: float) -> dict:
+        """Sizing by risk: the trade is as big as makes a stop-out cost about risk_pct of the equity, so a
+        nervous coin gets a small position and a calm one a larger one. The leverage is the lowest that fits
+        that size inside margin_pct of the free cash; one that puts liquidation closer than twice the stop is
+        never used."""
+        p = self.p
+        if px <= 0 or a <= 0:
+            return {"ok": False, "why": "sem preço para medir o risco"}
+        stop_pct = p.stop_atr * a / px
+        cost_pct = 2 * p.fee + 0.0004                     # both fees and the slippage of the two sides
+        max_lev = max(1, self.meta.get(coin, {}).get("max_lev", 1))
+        mm = 1 / (2 * max_lev)                            # Hyperliquid's maintenance margin
+        cap = float(min(self.d.lev, max_lev))
+        levs = [lv for lv in sorted({float(x) for x in LEVERAGES if x <= cap} | {cap}) if 1 / lv - mm >= 2 * stop_pct]
+        if not levs:
+            return {"ok": False, "why": "stop demasiado perto da liquidação"}
+        with self.lock:
+            eq, cash = self.equity(), self.d.cash
+            heat = self.open_risk()
+            same = any(q.side == side for q in self.d.positions)
+        budget = min(p.risk_pct * eq * (0.5 if same else 1.0), p.max_heat * eq - heat)
+        if budget <= 0:
+            return {"ok": False, "why": "risco aberto no máximo"}
+        want = budget / (stop_pct + cost_pct)
+        lev = next((lv for lv in levs if cash * p.margin_pct * lv >= want), levs[-1])
+        notional = min(want, cash * p.margin_pct * lev)
+        if notional < 10 or notional / lev < 5:
+            return {"ok": False, "why": "aposta abaixo do mínimo"}
+        return {"ok": True, "lev": lev, "notional": notional, "margin": notional / lev,
+                "risk": notional * (stop_pct + cost_pct), "halved": same}
+
     def execute_best(self):
-        self.ready = [r for r in self.ready if time.time() - r["since"] < 600]
+        now = time.time()
+        if self.stale.is_set():                           # found before a gap without watching: not trusted
+            self.stale.clear()
+            self.queue.clear()
+            self.ready.clear()
+        for r in [r for r in self.ready if now - r["since"] >= 600]:
+            self.event("EXEC", r["coin"], "skip", "sinal expirou na fila")
+        self.ready = [r for r in self.ready if now - r["since"] < 600]
+        for line in self.guard.check(self.equity()):
+            self.alert(line)
+        if not self.guard.ok or now < self.no_new_until:
+            return
         if not self.ready or time.time() - self.last_open < self.p.open_every_s:
             return
         with self.lock:
@@ -506,16 +610,29 @@ class PerpDesk:
         best = max(self.ready, key=lambda r: r["score"])
         self.ready.remove(best)
         self.last_open = time.time()
-        self.open(best["coin"], best["side"], best["atr"], best["score"])
+        self.open(best["coin"], best["side"], best["atr"], best["score"], best.get("px", 0.0))
 
-    def open(self, coin: str, side: int, a: float, score: float):
-        lev, margin = self.leverage(coin), self.margin()
+    def open(self, coin: str, side: int, a: float, score: float, px0: float = 0.0):
+        """px0 is the price the signal was found at; the book is read again here and the entry is dropped
+        when the price has left it."""
         t0 = time.time()
+        s = self.size(coin, side, a, px0 or self.meta.get(coin, {}).get("mark", 0.0))
+        if not s["ok"]:
+            return self.event("EXEC", coin, "skip", s["why"])
+        lev, margin = s["lev"], s["margin"]
         f = self.book_fill(coin, side, margin * lev)
         fill_s = time.time() - t0
         name = "long" if side == 1 else "short"
         if not f or not f["fill"]:
             return self.event("EXEC", coin, "skip", "sem preço no livro na hora de abrir")
+        if f["spread"] > self.p.max_spread or f["impact"] > self.p.max_impact:
+            return self.event("EXEC", coin, "skip", f"livro piorou: spread {_pt(f['spread'] * 100, 3)}% · "
+                                                    f"{_pt(f['impact'] * 100, 3)}% slip")
+        moved = (f["mid"] - px0) * side / a if px0 and a else 0.0
+        if moved > self.p.chase_open_atr:
+            return self.event("EXEC", coin, "skip", f"preço fugiu: {moved:.1f} ATR desde o sinal")
+        if moved < -self.p.break_open_atr:
+            return self.event("EXEC", coin, "skip", f"sinal quebrou: {-moved:.1f} ATR contra desde o sinal")
         fill = f["fill"]
         qty = margin * lev / fill
         fee = qty * fill * self.p.fee
@@ -530,54 +647,131 @@ class PerpDesk:
                      a, stop, liq, fill, fill, fees=fee, score=score)
             q.series = [[int(time.time() * 1000), fill]]
             self.d.positions.append(q)
-        self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · 40% do saldo livre · "
+        risk_eur = s["risk"] / self.d.eur_usd
+        self.event("EXEC", coin, "buy", f"{name} {lev:g}x · margem {_pt(margin / self.d.eur_usd)} € · arrisca "
+                                        f"{_pt(risk_eur)} € no stop{' (metade: mesmo lado já aberto)' if s['halved'] else ''} · "
                                         f"nota {score:.0f} · via INVO (papel)", side=name, lev=lev, price=fill, stop=stop,
-                   liq=liq, eur=round(margin / self.d.eur_usd, 2), score=round(score), fill_s=round(fill_s, 1))
-        self.live.on_open(coin, side, lev, margin * lev, fill, stop, fill)
+                   liq=liq, eur=round(margin / self.d.eur_usd, 2), score=round(score), fill_s=round(fill_s, 1),
+                   risk_eur=round(risk_eur, 2))
+        self._bridge("on_open", coin, side, lev, margin * lev, fill, stop, fill)
 
     # ------------------------------------------------------------ EXEC (risk every 5 s)
     def risk_loop(self):
         while not self.stop.is_set():
             tick = time.time()
             try:
+                if STOP_FILE.exists():                    # "Parar sessão": seen here within 5 s
+                    self.quit.set()
+                self._gap(tick)
                 self.risk()
+                ms = int((time.time() - tick) * 1000)
+                self.d.tick_ms, self.d.max_tick_ms = ms, max(self.d.max_tick_ms, ms)
                 self.save()
             except Exception:
                 self.d.api_errors += 1
                 log.exception("Risk tick failed, carrying on")
             self.stop.wait(max(0.5, self.RISK_EVERY_S - (time.time() - tick)))
 
+    def _gap(self, tick: float):
+        """The clock jumped between two checks: the computer slept or this process was frozen. Nothing was
+        watching the stops meanwhile, so say it, pause new entries and drop the signals found before it."""
+        gap, self._loop_at = (tick - self._loop_at if self._loop_at else 0.0), tick
+        if gap <= GAP_S:
+            return
+        self.d.blind_s += gap
+        self.d.max_gap_s = max(self.d.max_gap_s, gap)
+        self.no_new_until = tick + PAUSE_AFTER_GAP_S
+        self.stale.set()
+        with self.lock:
+            n = len(self.d.positions)
+        self.alert(f"sem vigilância durante {guard.dur(gap)} (computador suspenso ou parado)"
+                   + (f": {n} {'posição esteve' if n == 1 else 'posições estiveram'} sem stop" if n else "")
+                   + f" · entradas em pausa {guard.dur(PAUSE_AFTER_GAP_S)}")
+
+    def _feed(self, answered: bool):
+        """Prices not arriving means stops not watched. After three readings in a row the app is told."""
+        if answered:
+            self._misses = 0
+            if self.d.feed_stale:
+                self.d.feed_stale = False
+                self.alert("preços da Hyperliquid de volta: stops outra vez vigiados")
+            return
+        self._misses += 1
+        if self._misses == 1:
+            self._miss_since = time.time()
+        if self._misses >= MISS_ALERT and not self.d.feed_stale:
+            self.d.feed_stale = True
+            self.alert(f"sem preços da Hyperliquid há {guard.dur(time.time() - self._miss_since + self.RISK_EVERY_S)}"
+                       ": stops sem vigilância")
+
     def risk(self, final: bool = False):
         with self.lock:
             if not self.d.positions:
                 return
-        mids = self.info({"type": "allMids"}, self.http_risk) or {}
+        mids = self.info({"type": "allMids"}, self.http_risk, timeout=8 if final else 4, tries=2 if final else 1)
+        self._feed(isinstance(mids, dict))
+        mids = mids if isinstance(mids, dict) else {}
         with self.lock:
             now = time.time()
             for q in list(self.d.positions):
-                px = _f(mids.get(q.coin))
-                if px <= 0:
-                    if final:
-                        self.close(q, q.last, "fim da sessão (último preço)")
-                    continue
-                hours = (now - getattr(q, "_tick", now)) / 3600
-                q._tick = now
-                q.funding += q.side * q.qty * px * self.meta.get(q.coin, {}).get("funding", 0.0) * hours
-                q.last = px
-                q.peak = max(q.peak, px) if q.side == 1 else min(q.peak, px)
-                _mark(q.series, px)
-                r = self.p.stop_atr * q.atr
-                trail = q.peak - q.side * self.p.trail_atr * q.atr
-                if (px - q.liq) * q.side <= 0:
-                    self.close(q, px, "liquidada", "liq")
-                elif (px - q.stop) * q.side <= 0:
-                    self.close(q, px, "stop na entrada" if q.half_done else f"stop {self.p.stop_atr:g} ATR", "stop")
-                elif not q.half_done and (px - q.entry) * q.side >= self.p.half_r * r:
-                    self._half(q, px)
-                elif q.half_done and (px - trail) * q.side <= 0:
-                    self.close(q, px, f"trailing {self.p.trail_atr:g} ATR do máximo", "trail")
-                elif final:
-                    self.close(q, px, "fim da sessão", "end")
+                try:                                      # one position going wrong must not leave the others unwatched
+                    self._check(q, _f(mids.get(q.coin)), now, final)
+                    self._fails.pop(q.id, None)
+                except Exception:
+                    self.d.risk_errors += 1
+                    log.exception("Price check of %s failed, the other positions carry on", q.coin)
+                    n = self._fails[q.id] = self._fails.get(q.id, 0) + 1
+                    if n == 3:
+                        self.alert("a vigilância desta posição falhou 3 vezes seguidas", q.coin)
+
+    def _replay(self, q: Perp, since: float, gap: float) -> bool:
+        """After a gap: did the price cross the liquidation or the stop while nobody looked? The 1-minute
+        candles of the gap answer. Liquidation is looked at first (the worse case when a bar crossed both); a
+        stop is booked at the stop price, not at today's better one. The half and the trailing are not replayed."""
+        q.blind = True
+        try:
+            bars = self.candles(q.coin, "1m", min(5000, int(gap // 60) + 2), self.http_risk, timeout=4, tries=1)
+        except Exception:
+            bars = []
+        bars = [b for b in bars if b["t"] + 60_000 > since * 1000 and b["l"] > 0]
+        if not bars:
+            return False
+        worst = min(b["l"] for b in bars) if q.side == 1 else max(b["h"] for b in bars)
+        if (worst - q.liq) * q.side <= 0:
+            self.close(q, q.liq, f"liquidada durante {guard.dur(gap)} sem vigilância", "liq")
+            return True
+        if (worst - q.stop) * q.side <= 0:
+            self.close(q, q.stop, ("stop na entrada" if q.half_done else f"stop {self.p.stop_atr:g} ATR")
+                       + f" batido durante {guard.dur(gap)} sem vigilância", "stop")
+            return True
+        return False
+
+    def _check(self, q: Perp, px: float, now: float, final: bool):
+        if px <= 0:
+            if final:
+                self.close(q, q.last, "fim da sessão (último preço)")
+            return
+        since = getattr(q, "_tick", now)
+        hours = (now - since) / 3600
+        q._tick = now
+        q.funding += q.side * q.qty * px * self.meta.get(q.coin, {}).get("funding", 0.0) * hours
+        if now - since > GAP_S and self._replay(q, since, now - since):
+            return
+        q.last = px
+        q.peak = max(q.peak, px) if q.side == 1 else min(q.peak, px)
+        _mark(q.series, px)
+        r = self.p.stop_atr * q.atr
+        trail = q.peak - q.side * self.p.trail_atr * q.atr
+        if (px - q.liq) * q.side <= 0:
+            self.close(q, px, "liquidada", "liq")
+        elif (px - q.stop) * q.side <= 0:
+            self.close(q, px, "stop na entrada" if q.half_done else f"stop {self.p.stop_atr:g} ATR", "stop")
+        elif not q.half_done and (px - q.entry) * q.side >= self.p.half_r * r:
+            self._half(q, px)
+        elif q.half_done and (px - trail) * q.side <= 0:
+            self.close(q, px, f"trailing {self.p.trail_atr:g} ATR do máximo", "trail")
+        elif final:
+            self.close(q, px, "fim da sessão", "end")
 
     def _record(self, q: Perp, exit_px: float, got: float, margin: float, fee_in: float, fee_out: float,
                 funding: float, reason: str, kind: str):
@@ -588,8 +782,11 @@ class PerpDesk:
              "pnl_usd": pnl, "pnl_eur": pnl / self.d.eur_usd, "pct": pnl / margin if margin else 0, "reason": reason,
              "kind": kind, "funding": funding, "fees": fee_in + fee_out, "score": q.score,
              "mult": (margin + pnl) / margin if margin else 1, "half_px": q.half_px, "half_ts": q.half_ts,
-             "stop": q.stop, "series": _thin_series(q.series, 120)}
+             "stop": q.stop, "series": _thin_series(q.series, 120), "blind": q.blind}
         self.d.trades.append(t)
+        total = self.guard.closed(q.id, pnl, kind != "half")
+        if total is not None and total < 0:               # the whole position lost: the coin rests
+            self.cool[q.coin] = time.time() + self.p.loss_cooldown_min * 60
         sign = "+" if pnl >= 0 else "-"
         self.event("EXEC", q.coin, "sell", f"fechou {name} ({reason}) {sign}{_pt(abs(pnl) / self.d.eur_usd)} € · "
                                            f"{'+' if t['pct'] >= 0 else ''}{_pt(t['pct'] * 100, 1)}% · via INVO (papel)",
@@ -610,7 +807,7 @@ class PerpDesk:
         q.half_done, q.half_px, q.half_ts, q.trail_on = True, px, int(time.time() * 1000), True
         q.stop = q.entry
         self._record(q, exit_px, got, m_half, fee_half, fee, f_half, "metade a 2R · stop na entrada", "half")
-        self.live.on_half(q.coin, q.side, px, q.stop)
+        self._bridge("on_half", q.coin, q.side, px, q.stop)
 
     def close(self, q: Perp, px: float, reason: str, kind: str = "end"):
         with self.lock:
@@ -622,7 +819,7 @@ class PerpDesk:
             self.d.cash += got
             self.d.positions.remove(q)
             self._record(q, exit_px, got, q.margin, q.fees, fee, q.funding, reason, kind)
-            self.live.on_close(q.coin, q.side, exit_px, kind, got - q.margin - q.fees)
+            self._bridge("on_close", q.coin, q.side, exit_px, kind, got - q.margin - q.fees)
 
     # ------------------------------------------------------------ loop
     def run(self) -> str:
@@ -631,32 +828,35 @@ class PerpDesk:
         self.save()
         (OUT / "pid").write_text(str(os.getpid()), encoding="utf-8")
         STOP_FILE.unlink(missing_ok=True)
+        guard.keep_awake(True)                # no idle sleep while the session runs (a closed lid still sleeps)
         risk_thread = threading.Thread(target=self.risk_loop, name="perp-risk", daemon=True)
         risk_thread.start()
         next_scan = 0.0
         try:
-            while _now() < end:
+            while _now() < end and not self.quit.is_set():
                 if STOP_FILE.exists():
-                    log.info("Stopped from the app")
-                    STOP_FILE.unlink(missing_ok=True)
                     break
                 tick = time.time()
                 try:
                     if tick >= next_scan:
                         self.scan()
                         next_scan = time.time() + self.SCAN_EVERY_S
-                    for _ in range(3):
-                        if self.queue:
-                            self.auditor(*self.queue.pop(0))
+                    while self.queue and not self.quit.is_set() and time.time() - tick < 20:
+                        self.auditor(*self.queue.pop(0))
+                        self.execute_best()       # the entry goes in right after its audit, not a tick later
                     self.execute_best()
                 except Exception:
                     self.d.api_errors += 1
                     log.exception("Tick failed, carrying on")
-                time.sleep(max(1.0, min(5 - (time.time() - tick), (end - _now()).total_seconds())))
+                self.quit.wait(max(1.0, min(5 - (time.time() - tick), (end - _now()).total_seconds())))
         except KeyboardInterrupt:
             log.info("Stopped by hand")
+        if self.quit.is_set() or STOP_FILE.exists():
+            log.info("Stopped from the app")
         self.stop.set()
         risk_thread.join(timeout=30)
+        STOP_FILE.unlink(missing_ok=True)
+        guard.keep_awake(False)
         try:
             self.risk(final=True)
         except Exception:
@@ -665,7 +865,7 @@ class PerpDesk:
             self.close(q, q.last, "fim da sessão (último preço)")
         self.d.finished = True
         self.d.ends = min(self.d.ends, _now().isoformat(timespec="seconds"))
-        self.save()
+        self.save(final=True)
         (OUT / "pid").unlink(missing_ok=True)
         report = self.report()
         (OUT / "relatorio.md").write_text(report, encoding="utf-8")

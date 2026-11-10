@@ -419,9 +419,10 @@ def test_futures_mode_opens_only_on_5_of_5_and_respects_leverage(monkeypatch, tm
             "v": 100 + (40 if i > 115 else 0)} for i in range(120)]
     c15[-1]["c"] = c15[-2]["c"] + 0.05
     h1 = [{"t": i, "o": 90 + i * 0.2, "h": 90.5 + i * 0.2, "l": 89.8 + i * 0.2, "c": 90.2 + i * 0.2, "v": 1000} for i in range(80)]
-    monkeypatch.setattr(desk, "candles", lambda coin, interval, bars: c15 if interval == "15m" else h1)
+    desk.live.mode = "off"                                # the dry-run bridge has its own tests
+    monkeypatch.setattr(desk, "candles", lambda coin, interval, bars, *a, **kw: c15 if interval == "15m" else h1)
     book = {"levels": [[{"px": "105.99", "sz": "500"}], [{"px": "106.00", "sz": "500"}]]}
-    monkeypatch.setattr(desk, "info", lambda body, session=None: book if body["type"] == "l2Book" else None)
+    monkeypatch.setattr(desk, "info", lambda body, session=None, **kw: book if body["type"] == "l2Book" else None)
     desk.crowd = {"AAA": {"long": 1, "short": 6, "long_usd": 1e6, "short_usd": 9e6}}
     desk.trends("AAA")
     assert desk.queue and desk.queue[0][1] == 1           # TRENDS says long
