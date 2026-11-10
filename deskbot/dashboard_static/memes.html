@@ -344,7 +344,7 @@ const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { r
 const KIND = /perps/.test(location.pathname) ? "perps" : "memes";
 const MODE = KIND === "perps" ? "futuros" : "memes";
 const PERPS = KIND === "perps";
-const VENUE_NAME = {gmgn: "GMGN", fomo: "FOMO", invo: "INVO"};
+const VENUE_NAME = {fomo: "FOMO", invo: "INVO"};
 const K = PERPS ? {chip: "modo futuros", api: "/api/desk/perps", unit: "pares", what: "futuros"}
                 : {chip: "modo memes", api: "/api/desk/memes", unit: "moedas", what: "memecoins"};
 document.title = "AI Desk Bot · " + K.chip;
@@ -404,7 +404,7 @@ function coinAv(sym, img, size = 40) {
 
 /* ---------------------------------------------------------------- data */
 const S = {d: null, lastEv: null, minutes: 720, eur: 110, lev: 5, range: "LIVE", allEv: false, view: "home", celebInit: false,
-           venue: PERPS ? "invo" : (store.get("deskbot-venue") === "fomo" ? "fomo" : "gmgn"),
+           venue: PERPS ? "invo" : "fomo",
            style: store.get("deskbot-style") === "mais" ? "mais" : "poucas"};
 const STYLE = {poucas: {name: "Poucas e boas", note: "3 baleias de $500+ · 4 votos em 5 · top 10 abaixo de 25%"},
                mais: {name: "Mais entradas", note: "2 baleias de $300+ · 3 votos em 5 · top 10 abaixo de 40% · mais trades, mais perdas pequenas"}};
@@ -446,7 +446,7 @@ function render() {
   $("#livepill span").textContent = d.running ? "Live" : "Parada";
   ({home: renderHome, agents: renderAgents, activity: renderActivity, account: renderAccount, coin: renderCoin})[S.view](d);
 }
-const venueName = d => VENUE_NAME[d.venue || S.venue] || "GMGN";
+const venueName = () => VENUE_NAME[S.venue];
 
 /* rolling digits, like a counter */
 function roll(el, text) {
@@ -715,9 +715,9 @@ function renderAccount(d) {
   $("#acc-rules").innerHTML = (d.rules || []).map(r => `<li>${esc(r)}</li>`).join("");
   const rows = PERPS
     ? [["Hyperliquid", "preços, livro, funding, top traders"], ["INVO", "sem API pública: só abre a app"]]
-    : [["GMGN", d.gmgn_key ? "ligada com a tua chave" : "sem chave: não usada"], ["GeckoTerminal", "pools e baleias"], ["DexScreener", "preço, liquidez, market cap"], ["Jupiter", "cotações de compra e venda"], ["FOMO", "sem API pública: só abre as moedas"]];
+    : [...(d.gmgn_key ? [["GMGN", "dados com a tua chave, só leitura"]] : []), ["GeckoTerminal", "pools e baleias"], ["DexScreener", "preço, liquidez, market cap"], ["Jupiter", "cotações de compra e venda"], ["FOMO", "sem API pública: só abre as moedas"]];
   $("#acc-feeds").innerHTML = rows.map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
-  $("#acc-links").innerHTML = `<a href="/app">Todas as mesas <span>›</span></a>${PERPS ? `<a href="/app#/futuros">Mesa contínua de futuros (4 h, com backtest) <span>›</span></a>` : ""}`;
+  $("#acc-links").innerHTML = `<a href="/app">As duas mesas <span>›</span></a>`;
 }
 $("#b-new").onclick = () => openConnect();
 $("#b-recap").onclick = () => openRecap();
@@ -804,9 +804,7 @@ function coinLinks(c) {
   if (PERPS) return [["Abrir na INVO", "https://app.invoapp.com/"], ["Abrir na Hyperliquid", `https://app.hyperliquid.xyz/trade/${encodeURIComponent(String(c.symbol))}`]];
   if (!c.mint) return [];
   const m = encodeURIComponent(c.mint);
-  const app = {gmgn: ["Abrir na GMGN", `https://gmgn.ai/sol/token/${m}`], fomo: ["Abrir na FOMO", `https://fomo.family/tokens/solana/${m}`]};
-  const v = (S.d && S.d.venue) === "fomo" ? "fomo" : "gmgn";
-  return [app[v], app[v === "gmgn" ? "fomo" : "gmgn"], ["Abrir no pump.fun", `https://pump.fun/coin/${m}`], ["Abrir no DexScreener", `https://dexscreener.com/solana/${m}`]];
+  return [["Abrir na FOMO", `https://fomo.family/tokens/solana/${m}`], ["Abrir no pump.fun", `https://pump.fun/coin/${m}`], ["Abrir no DexScreener", `https://dexscreener.com/solana/${m}`]];
 }
 function drawCoin(c, scale) {
   const box = $("#cchart"), cv = $("#ccv"); if (!box || !cv) return;
@@ -893,14 +891,11 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet()
 const DUR = [[5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [120, "2 h"], [720, "12 h"]];
 function openConnect() {
   const d = S.d || {}, stakes = d.stakes || [20, 50, 110, 500, 1000];
-  const venues = PERPS ? ["invo"] : ["gmgn", "fomo"];
-  if (!venues.includes(S.venue)) S.venue = venues[0];
   if (!stakes.includes(S.eur)) S.eur = 110;
   const data = PERPS ? "Hyperliquid · top traders · livro de ordens" : (d.gmgn_key ? "GMGN · smart money · KOLs · rug score" : "GeckoTerminal · Jupiter · pump.fun");
   sheet(`<div class="conn-icons"><img src="/icon-180.png" alt=""><span class="dots3">• • •</span><span class="vbadge" id="c-badge">${VENUE_NAME[S.venue]}</span></div>
     <h2 id="c-h">Ligar à ${VENUE_NAME[S.venue]}</h2><p class="t2" style="text-align:center;margin:0;font-size:14px" id="c-sub">AI Desk Bot quer negociar ${K.what} através da ${VENUE_NAME[S.venue]} · em papel</p>
-    ${PERPS ? "" : `<div class="lbl">app</div><div class="choice" id="c-ven">${venues.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === S.venue}">${VENUE_NAME[v]}</button>`).join("")}</div>
-    <div class="lbl">entradas</div><div class="choice" id="c-sty">${Object.entries(STYLE).map(([k, x]) => `<button type="button" data-s="${k}" aria-pressed="${k === S.style}">${x.name}</button>`).join("")}</div>
+    ${PERPS ? "" : `<div class="lbl">entradas</div><div class="choice" id="c-sty">${Object.entries(STYLE).map(([k, x]) => `<button type="button" data-s="${k}" aria-pressed="${k === S.style}">${x.name}</button>`).join("")}</div>
     <p class="t3" id="c-sty-note" style="font-size:12.5px;margin:6px 0 0">${STYLE[S.style].note}</p>`}
     <div class="kv" style="margin-top:14px"><div><span>${PERPS ? "exchange" : "chain"}</span><span>${PERPS ? "Hyperliquid (a da INVO)" : "Solana"}</span></div><div><span>dados</span><span>${esc(data)}</span></div><div><span>agentes</span><span>5 · Scanner → Risco</span></div><div><span>sessão</span><span id="c-sess"></span></div></div>
     <div class="lbl">duração</div><div class="choice" id="c-dur">${DUR.map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${m === S.minutes}">${l}</button>`).join("")}</div>
@@ -911,7 +906,6 @@ function openConnect() {
   const sess = () => { $("#c-sess").textContent = `${hhmm(new Date().toISOString())} → ${hhmm(new Date(Date.now() + S.minutes * 60000).toISOString())} · ${eur(S.eur)}${PERPS ? " · " + S.lev + "x" : ""}`; };
   sess();
   const pick = (sel, fn) => $$(sel + " button").forEach(b => b.onclick = () => { fn(b); $$(sel + " button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); sess(); });
-  pick("#c-ven", b => { S.venue = b.dataset.v; store.set("deskbot-venue", S.venue); const n = VENUE_NAME[S.venue]; $("#c-badge").textContent = n; $("#c-h").textContent = "Ligar à " + n; $("#c-acc").textContent = n; $("#c-sub").textContent = `AI Desk Bot quer negociar ${K.what} através da ${n} · em papel`; });
   pick("#c-sty", b => { S.style = b.dataset.s; store.set("deskbot-style", S.style); $("#c-sty-note").textContent = STYLE[S.style].note; });
   pick("#c-dur", b => { S.minutes = +b.dataset.m; });
   pick("#c-eur", b => { S.eur = +b.dataset.e; });

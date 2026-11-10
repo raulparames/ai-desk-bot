@@ -301,7 +301,7 @@ def main(argv=None):
     md = sub.add_parser("memedesk", help="memes mode: 5-agent Solana memecoin desk in paper (like the gmgn video)")
     md.add_argument("--minutes", type=float, default=720)
     md.add_argument("--eur", type=float, default=110)
-    md.add_argument("--venue", choices=("gmgn", "fomo"), default="gmgn", help="app the coins open in (paper either way)")
+    md.add_argument("--venue", default="fomo", help="app the coins open in: FOMO (paper either way)")
     md.add_argument("--style", choices=("poucas", "mais"), default="poucas", help="few strict entries or more, looser ones")
     pd = sub.add_parser("perpdesk", help="futures mode: 5-agent Hyperliquid perps desk in paper (INVO's exchange)")
     pd.add_argument("--minutes", type=float, default=720)

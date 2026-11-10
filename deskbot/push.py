@@ -179,7 +179,7 @@ class Pusher:
             done = self._announced().get(desk, {})
             fresh = [e for e in fresh if e["ts"] > done.get("ts", "")]
             ending = ending and done.get("end") != started
-            venue = {"gmgn": "GMGN", "fomo": "FOMO", "invo": "INVO"}.get(st.get("venue") or "", "GMGN")
+            venue = "INVO" if desk == "perps" else "FOMO"
             for e in fresh[-self.MAX_PER_TICK:]:
                 msg = message(desk, e, venue)
                 if msg and self.subs:

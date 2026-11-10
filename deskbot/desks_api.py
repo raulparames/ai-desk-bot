@@ -1,4 +1,4 @@
-"""The three paper desks as the phone app sees them: Memecoins, Futuros, Ações.
+"""The paper desks as the phone app sees them. The app shows two: Memecoins (FOMO) and Futuros (INVO).
 
 Normalises each desk's state into one shape, starts/stops memecoin sessions, pauses desks and
 keeps a cached backtest summary per desk. Used by dashboard.py.
@@ -29,7 +29,7 @@ DURATIONS = (5, 10, 15, 30, 120, 720)
 
 META = {
     "memes": {"title": "Memecoins", "mode": "memecoins", "color": "#ff4fa3",
-              "subtitle": "memecoins da Solana · sessões de 5 min a 12 h",
+              "subtitle": "memecoins da Solana · FOMO · sessões de 5 min a 12 h",
               "blurb": "5 agentes (Scanner, Analista, Compounder, Executor, Risco). 40% do saldo livre por compra, metade a 2×, trailing 10%, stop −8%."},
     "futuros": {"title": "Futuros", "mode": "futuros", "color": "#7b61ff",
                 "subtitle": "perpétuos de cripto · long e short · velas de 4 h",
@@ -80,7 +80,7 @@ def perp_running() -> bool:
 
 
 STAKES = (20, 50, 110, 500, 1000)
-VENUES = ("gmgn", "fomo")       # where the memes app opens each coin (orders stay in paper)
+VENUES = ("fomo",)              # where the memes app opens each coin (orders stay in paper)
 LEVERAGES = (2, 5, 10)
 
 
@@ -107,10 +107,10 @@ def _spawn(folder: Path, args: list[str]):
             break
 
 
-def start_memes(minutes: int, eur: float = 110, venue: str = "gmgn", style: str = "poucas") -> tuple[int, dict]:
+def start_memes(minutes: int, eur: float = 110, venue: str = "fomo", style: str = "poucas") -> tuple[int, dict]:
     if err := _check(minutes, eur):
         return 400, {"error": err}
-    venue = venue if venue in VENUES else "gmgn"
+    venue = venue if venue in VENUES else "fomo"
     style = style if style in ("poucas", "mais") else "poucas"
     if meme_running():
         return 409, {"error": "Já há uma sessão de memes a correr"}
@@ -282,7 +282,7 @@ def _memes() -> dict:
     if os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY"):
         rules.insert(2, "GMGN (chave tua): moedas em alta da GMGN, smart money e KOLs no SMARTS, rug score, wash trading e bots na equipa de risco")
     base = {"durations": list(DURATIONS), "stakes": list(STAKES), "rules": rules, "running": running, "repos": repos,
-            "venues": list(VENUES), "gmgn_key": bool(os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY")),
+            "venues": list(VENUES), "venue": "fomo", "gmgn_key": bool(os.getenv("GMGN_API_KEY") or _env_has("GMGN_API_KEY")),
             "cards": CARDS, "params": {"stop_pct": 0.08, "half_at": memedesk.HALF_AT, "trail_pct": 0.10,
                                        "stack_pct": 0.40, "max_open": 2, "goal_mult": 10}}
     if not st:
@@ -350,7 +350,7 @@ def _memes() -> dict:
             "ready": st.get("ready", []), "pools_seen": st.get("pools_seen", 0),
             "curve": [[t, v / rate] for t, v in st.get("curve", [])][-1500:], "recap": recap,
             "mode": st.get("mode", "classic"), "agents": st.get("agents", {}),
-            "venue": st.get("venue") or "gmgn", "feeds": st.get("feeds", {}), "cash_eur": st.get("cash", 0) / rate,
+            "venue": "fomo", "feeds": st.get("feeds", {}), "cash_eur": st.get("cash", 0) / rate,
             "style": st.get("style") or "poucas",
             "wins": sum(1 for t in trades if t["pnl_eur"] > 0), "losses": sum(1 for t in trades if t["pnl_eur"] <= 0)}
 
@@ -442,10 +442,8 @@ def _perps() -> dict:
 
 def overview(bt: dict | None = None) -> dict:
     items = []
-    for name in ("memes", "futuros", "acoes"):
-        d = desk(name, bt)
-        if name == "futuros" and (perp_running() or (PERP_DIR / "state.json").exists()):
-            d = {**desk("perps", bt), "name": "futuros"}
+    for name in ("memes", "futuros"):   # the app's two desks: Memecoins on FOMO, Futuros on INVO (Hyperliquid)
+        d = desk(name, bt) if name == "memes" else {**desk("perps", bt), "name": "futuros"}
         curve = d.get("curve") or []
         step = max(1, len(curve) // 60)
         items.append({k: d.get(k) for k in ("name", "title", "subtitle", "blurb", "color", "mode", "status",

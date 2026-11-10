@@ -157,11 +157,11 @@ a{color:inherit;text-decoration:none}
 <div class="splash" id="splash" aria-hidden="true">
   <img src="/icon-180.png" alt="">
   <b>AI Desk Bot</b>
-  <span class="sub">terminal · 3 mesas · papel</span>
+  <span class="sub">terminal · 2 mesas · papel</span>
 </div>
 <div class="offline" id="offline" role="status" hidden></div>
 
-<!-- ================= HOME: the three desks ================= -->
+<!-- ================= HOME: the two desks ================= -->
 <main id="v-home" class="wrap">
   <div class="top"><img src="/icon-180.png" alt=""><span class="nm">AI Desk Bot</span><span class="chip">papel</span><span class="live idle" id="home-live"><i></i>…</span></div>
   <h1 class="hello">Mesas</h1>
@@ -279,7 +279,7 @@ const liveTag = st => { const [c, t] = STATUS[st] || STATUS.idle; return `<span 
 /* ------------------------------------------------------------ routing */
 const S = {desk: null, d: null, timer: null, lastOk: null};
 function route() {
-  const m = location.hash.match(/^#\/(memes|futuros|acoes)$/);
+  const m = location.hash.match(/^#\/(memes|futuros)$/);
   clearInterval(S.timer);
   if (m) { S.desk = m[1]; $("#v-home").hidden = true; $("#v-desk").hidden = false; window.scrollTo(0, 0); loadDesk(); S.timer = setInterval(() => !document.hidden && loadDesk(true), S.desk === "memes" ? 10000 : 30000); }
   else { S.desk = null; $("#v-desk").hidden = true; $("#v-home").hidden = false; loadHome(); S.timer = setInterval(() => !document.hidden && loadHome(), 20000); }

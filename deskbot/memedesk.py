@@ -42,7 +42,7 @@ GMGN (smart money and KOL wallets, rug scores, its own trending list) joins in w
 in .env (your own key from https://gmgn.ai/ai; read-only, see gmgn.py). Then TRENDS also takes GMGN's
 5-minute trending coins, SMARTS counts GMGN's smart money and KOL wallets, and the risk team adds
 GMGN's rug score, wash trading, bundler and insider shares. Without a key it runs as above.
-The venue (GMGN or FOMO) is only where the app opens each coin: every order stays in paper.
+The venue is FOMO: it is only where the app opens each coin, every order stays in paper.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ REPOS = {
     "RISK": ("0xsyncroot/opentrade", "metade a 2× · trailing 10% · stop −8%"),
 }
 HALF_AT = 2.0
-VENUES = {"gmgn": "GMGN", "fomo": "FOMO"}
+VENUES = {"fomo": "FOMO"}
 STYLES = {   # whale size, whales needed, bull votes needed, top-10 holders limit (%)
     "poucas": {"whale_usd": 500, "min_whales": 3, "min_bulls": 4, "max_top10": 25},
     "mais": {"whale_usd": 300, "min_whales": 2, "min_bulls": 3, "max_top10": 40},
@@ -107,10 +107,10 @@ class MemesDesk(MemeTest):
 
     MIN_BULLS = 4
 
-    def __init__(self, minutes: float, eur: float, venue: str = "gmgn", style: str = "poucas"):
+    def __init__(self, minutes: float, eur: float, venue: str = "fomo", style: str = "poucas"):
         super().__init__(minutes, eur, memes_params())
         self.d.mode = "memes"
-        self.d.venue = venue if venue in VENUES else "gmgn"
+        self.d.venue = venue if venue in VENUES else "fomo"
         self.d.style = style if style in STYLES else "poucas"
         st = STYLES[self.d.style]
         self.WHALE_USD, self.MIN_WHALES, self.MIN_BULLS = st["whale_usd"], st["min_whales"], st["min_bulls"]
@@ -644,5 +644,5 @@ def _thin_series(series: list, n: int) -> list:
     return [series[int(i * step)] for i in range(n)] + [series[-1]]
 
 
-def run(minutes: float, eur: float, venue: str = "gmgn", style: str = "poucas") -> str:
+def run(minutes: float, eur: float, venue: str = "fomo", style: str = "poucas") -> str:
     return MemesDesk(minutes, eur, venue, style).run()

@@ -114,7 +114,9 @@ Segurança:
 - A ligação é http simples dentro da rede de casa. Não abras a porta 8899 no router. Para veres o painel fora de casa, usa uma VPN privada como o Tailscale no PC e no telemóvel.
 - Para desligar: `lan = false` e reinicia o painel. Para tirar a regra da firewall: `Remove-NetFirewallRule -DisplayName "AI Desk Bot - telemovel"` (como administrador).
 
-## App das 3 mesas (telemóvel)
+## App das 2 mesas (telemóvel)
+
+A app mostra agora só duas mesas: **Futuros** (perpétuos da Hyperliquid, abre na INVO) e **Memecoins** (Solana, abre na FOMO). As duas correm em sessões que arrancas na app, sempre em papel. O texto abaixo descreve as mesas contínuas antigas (futuros da Binance e ações), que já não aparecem na app.
 
 A app do telemóvel abre agora em **/app**, num visual claro: um ecrã de abertura e depois as mesas, cada uma com as suas regras e o seu saldo fictício de 1 000 €.
 
@@ -146,7 +148,7 @@ A mesa de Memecoins abre agora em **/memes**, num ecrã escuro:
 | ROUTER | sendaifun/solana-agent-kit | Cotação real da Jupiter para o tamanho do trade; recusa mais de 2% de impacto |
 | EXEC | 0xsyncroot/opentrade | Compra e vende em papel ao preço da Jupiter; preço a cada 5 s; stop −8% e trailing |
 
-O núcleo só compra quando os 5 concordam. Cada moeda tem links para o pump.fun, a GMGN e o DexScreener, só para ver.
+O núcleo só compra quando os 5 concordam. Cada moeda tem links para a FOMO, o pump.fun e o DexScreener, só para ver.
 
 **O que é diferente do vídeo, de propósito:**
 - É tudo em papel. O vídeo liga uma carteira à GMGN e negoceia dinheiro real; aqui não há carteira, chaves nem ordens.
@@ -232,7 +234,7 @@ deskbot/
   stocks.py     mesa de Ações (S&P 500 com filtro de tendência) e o seu backtest
   paperdesk.py  livro-razão em papel partilhado pelas mesas
   desks_api.py  o que a app vê de cada mesa, sessões de memecoins, pausas
-  dashboard_static/app.html  a app das 3 mesas (/app)
+  dashboard_static/app.html  a app das 2 mesas (/app)
   memedesk.py   modo memes: 5 agentes (TRENDS, SMARTS, DEBATE, ROUTER, EXEC) e o núcleo
   dashboard_static/memes.html  o ecrã escuro do modo memes (/memes)
   memetest.py   teste em papel de uma mesa de memecoins da Solana (python -m deskbot memetest)

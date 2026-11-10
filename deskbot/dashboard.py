@@ -974,7 +974,7 @@ class Handler(BaseHTTPRequestHandler):
                    "/api/desk/pause": lambda b: desks_api.pause(str(b.get("name")), bool(b.get("paused"))),
                    "/api/desk/memes/start": lambda b: desks_api.start_memes(int(b.get("minutes") or 0),
                                                                              float(b.get("eur") or 110),
-                                                                             str(b.get("venue") or "gmgn"),
+                                                                             str(b.get("venue") or "fomo"),
                                                                              str(b.get("style") or "poucas")),
                    "/api/desk/memes/stop": lambda b: desks_api.stop_memes(),
                    "/api/desk/perps/start": lambda b: desks_api.start_perps(int(b.get("minutes") or 0),

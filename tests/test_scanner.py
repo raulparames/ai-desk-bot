@@ -65,7 +65,7 @@ def test_more_entries_loosens_whales_votes_and_top10_but_never_the_rug_guard(mon
                            "volume_usd": {"m5": 9000, "h1": 90000}, "price_change_percentage": {"m5": 2, "h1": 10}}}
     results = {}
     for style in ("poucas", "mais"):
-        desk = memedesk.MemesDesk(30, 110, "gmgn", style)
+        desk = memedesk.MemesDesk(30, 110, "fomo", style)
         desk.gmgn.key = ""
         monkeypatch.setattr(desk, "_gecko", lambda path, params=None: {"data": whales} if "/trades" in path else info)
         monkeypatch.setattr(desk, "_mint_info", lambda mint: {"mintAuthority": None, "freezeAuthority": None, "decimals": 6})

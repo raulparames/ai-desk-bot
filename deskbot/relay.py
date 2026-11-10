@@ -140,7 +140,7 @@ def app_items(owner: str) -> dict:
     from . import desks_api
     bt = desks_api.backtests()
     items = {"app:overview": desks_api.overview(bt)}
-    for name in ("memes", "futuros", "acoes", "perps"):
+    for name in ("memes", "perps"):
         d = desks_api.desk(name, bt)
         if owner == "github" and _GH_KIND.get("desk") == name:
             d["running"] = bool(d.get("running") or _GH_SESSION.is_set())
@@ -164,7 +164,7 @@ def run_command(cmd: dict, owner: str) -> dict:
                                                   float(p.get("lev") or 5))
             else:
                 code, res = desks_api.start_memes(int(p.get("minutes") or 0), float(p.get("eur") or 110),
-                                                  str(p.get("venue") or "gmgn"), str(p.get("style") or "poucas"))
+                                                  str(p.get("venue") or "fomo"), str(p.get("style") or "poucas"))
         elif kind == "stop_session":
             perps = p.get("desk") == "perps"
             if owner == "github":
@@ -278,7 +278,7 @@ def _gh_session(relay: Relay, session: dict):
         desk = perpdesk.PerpDesk(minutes, eur, min(float(session.get("lev") or 5), 10))
     else:
         from . import memedesk
-        desk = memedesk.MemesDesk(minutes, eur, str(session.get("venue") or "gmgn"), str(session.get("style") or "poucas"))
+        desk = memedesk.MemesDesk(minutes, eur, str(session.get("venue") or "fomo"), str(session.get("style") or "poucas"))
     done = threading.Event()
     _GH_KIND["desk"] = "perps" if session.get("desk") == "perps" else "memes"
     _GH_SESSION.set()
