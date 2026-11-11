@@ -101,9 +101,15 @@ a{color:inherit;text-decoration:none}
 @media (max-width:359px){.seg.tf{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .levrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .levrow h3{margin:0;min-width:0}
-.lw{margin:10px 0 0;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.35}
+.lw{margin:10px 0 0;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
 .lw.bad{background:var(--red-dim);color:#ff8a8a}
 .lw.warn{background:rgba(255,200,61,.14);color:#ffd873}
+.lw.warn b{color:var(--yellow)}
+.lw.al{padding-left:28px}
+.lw.al li{margin:3px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chips .chip{align-self:center}
+.sh.two{flex-wrap:wrap;row-gap:2px}
 .err{color:var(--red);font-size:14px;margin:8px 0 0}
 .err:empty{display:none}
 .why{font-size:13.5px;color:var(--t3);text-align:center;margin:8px 0 0;min-height:18px}
@@ -206,6 +212,8 @@ a{color:inherit;text-decoration:none}
       <input class="vh" type="file" accept="image/png,image/jpeg,image/webp" tabindex="-1" aria-hidden="true">
       <button class="rm" type="button" disabled aria-label="Remover o screenshot">Remover</button>
     </div>
+    <p class="help" id="shot-info" role="status" hidden></p>
+    <p class="lw warn" id="shot-small" role="status" hidden></p>
     <p class="help">Um screenshot por análise, de um gráfico de futuros (perpétuos) em 1, 5 ou 15 min. No computador também podes colar ou arrastar a imagem.</p>
     <p class="err" id="shot-msg" role="alert"></p>
     <span class="lbl" id="h-tf">Tempo do gráfico (opcional)</span>
@@ -232,7 +240,7 @@ a{color:inherit;text-decoration:none}
     <div class="sh"><h2>Últimas análises</h2></div>
     <div id="hist"></div>
   </section>
-  <p class="note">Leitura educativa de uma só imagem, feita por IA: é uma leitura limitada, não uma garantia nem um conselho financeiro. «Melhor opção» quer dizer o melhor valor esperado entre as opções que a imagem mostra, depois de custos aproximados, nunca uma promessa de lucro. As probabilidades são a opinião do modelo e o valor esperado depende delas. Modo papel: nada é comprado ou vendido.</p>
+  <p class="note">Leitura educativa de uma só imagem, feita por IA: é uma leitura limitada, não uma garantia nem um conselho financeiro. Os dados de mercado ao vivo vêm da API pública da Hyperliquid e podem diferir da corretora do teu screenshot; também não garantem nada. «Melhor opção» quer dizer o melhor valor esperado entre as opções que a imagem mostra, depois de custos aproximados, nunca uma promessa de lucro. As probabilidades são a opinião do modelo e o valor esperado depende delas. Modo papel: nada é comprado ou vendido.</p>
 </main>
 
 <div class="lock" id="lock" hidden>
@@ -269,7 +277,7 @@ function fmt(v, min, max) {
   return NFC[k].format(v);
 }
 function num(v) {
-  if (v == null || v === "" || typeof v === "boolean") return null;
+  if (typeof v === "string" ? v.trim() === "" : typeof v !== "number") return null;    // [] and " " would count as 0
   const n = Number(v);
   return isFinite(n) ? n : null;
 }
@@ -300,7 +308,8 @@ function fmtEV(v) {
   return v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), 2, 2) + " R";
 }
 function tfLabel(tf) {
-  return {"1m": "1 min", "5m": "5 min", "15m": "15 min", "auto": "automático", "outro": "outro"}[tf] || String(tf ?? "");
+  return {"1m": "1 min", "5m": "5 min", "15m": "15 min", "1h": "1 h", "4h": "4 h", "1d": "1 dia",
+          "auto": "automático", "outro": "outro"}[tf] || String(tf ?? "");
 }
 function trendWord(t) {
   return {alta: "Alta", baixa: "Baixa", lateral: "Lateral"}[t] || String(t ?? "");
@@ -318,15 +327,99 @@ function fitSize(w, h, max) {
   const k = Math.min(1, max / Math.max(w, h));
   return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
 }
+/* What leaves for a screenshot of w x h. full: the whole of it fitted to MAX_EDGE. tiles: none when that fitting
+   kept the detail (scale 0.85 or more); otherwise two pieces along the long side, 56 % of it each (so they overlap
+   by 12 % and nothing falls in the cut), each fitted to MAX_EDGE too: the small numbers of the price axis, lost in
+   the whole view, stay readable there. A nearly square screenshot gets none either: its short side is what limits a
+   piece, so the pieces would be paid for and come out no sharper (under 10 % more) than the whole view.
+   sx/sy/sw/sh: the piece in the source; w/h: what is drawn. Whole pixels, >= 1. */
+function tilePlan(w, h) {
+  const px = v => { v = Math.round(Number(v)); return isFinite(v) && v >= 1 ? v : 1; };
+  w = px(w); h = px(h);
+  const side = Math.max(w, h), wide = w >= h, [fw, fh] = fitSize(w, h, MAX_EDGE);
+  const plan = {full: {w: fw, h: fh}, tiles: []};
+  if (MAX_EDGE / side >= 0.85) return plan;
+  const len = Math.min(side, Math.max(1, Math.ceil(side * 56 / 100)));
+  if (Math.min(1, MAX_EDGE / Math.max(len, Math.min(w, h))) < 1.1 * MAX_EDGE / side) return plan;
+  for (const at of [0, side - len]) {
+    const sw = wide ? len : w, sh = wide ? h : len, [tw, th] = fitSize(sw, sh, MAX_EDGE);
+    plan.tiles.push({sx: wide ? at : 0, sy: wide ? 0 : at, sw, sh, w: tw, h: th});
+  }
+  return plan;
+}
+/* what canvas.toDataURL() gave back, when it is the format that was asked for: {mime, b64}, else null. Safari
+   answers a WebP request with a PNG, and that one was already tried: the format is read from the answer itself */
+function readDataUrl(url, want) {
+  const m = /^data:(image\/(?:png|webp|jpeg));base64,/.exec(String(url ?? ""));
+  return m && m[1] === want && url.length > m[0].length ? {mime: m[1], b64: url.slice(m[0].length)} : null;
+}
+/* the two lines under the screenshot: what will be sent, and a warning when the source is too small to read */
+function shotInfo(shot) {
+  const imgs = shot && Array.isArray(shot.images) ? shot.images.filter(Boolean) : [];
+  if (!imgs.length) return {envio: "", aviso: ""};
+  const tiles = imgs.filter(i => i.part === "tile"), px = v => num(v) == null ? null : Math.round(num(v));
+  const w = px(shot.srcW), h = px(shot.srcH);
+  const how = tiles.every(t => t.nativo === true) ? "em resolução original" : "com mais detalhe";
+  return {
+    envio: tiles.length ? `Vista inteira + ${tiles.length} recorte${tiles.length > 1 ? "s" : ""} ${how}` : "Vista inteira",
+    aviso: w != null && h != null && Math.min(w, h) < 600
+      ? `Imagem pequena (${w}x${h}): os números do eixo podem não se ler bem. Usa o screenshot original, em ecrã inteiro.` : "",
+  };
+}
+/* a change in % with its sign ("+1,2 %", "−0,35 %"), "" when it is not a number; d: decimals (fmtPct picks when left out) */
+function fmtSigned(v, d) {
+  v = num(v);
+  return v == null ? "" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtPct(Math.abs(v), d);
+}
+/* dollars in short: 1,23 mil M $ · 345,6 M $ · 12,3 mil $ · 950 $; "" when it is not a number */
+function fmtUsd(v) {
+  v = num(v);
+  if (v == null || v < 0) return "";
+  if (v >= 999.95e6) return fmt(v / 1e9, 2, 2) + " mil M $";      // the limits sit where the rounding would write "1 000,0"
+  if (v >= 999.95e3) return fmt(v / 1e6, 1, 1) + " M $";
+  if (v >= 999.5) return fmt(v / 1e3, 1, 1) + " mil $";
+  return fmt(v, 0, 0) + " $";
+}
+/* The live market data the bot's code fetched (result.mercado) as the words the page shows; null when there is
+   none, or it is not an object with a price (an analysis from before this, a failed fetch, anything else). Texts stay
+   texts (escaped where they are drawn). A timeframe or a trend outside the known ones is left out, never shown as it
+   came, and the colour of a chip comes from that fixed list. aviso: said in the warning style at the top of the result. */
+function marketModel(m) {
+  if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+  const preco = num(m.preco);
+  if (preco == null || preco <= 0) return null;
+  const ladder = ["1m", "5m", "15m", "1h", "4h", "1d"], chips = {alta: "done", baixa: "armed", lateral: ""};
+  const text = v => typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
+  const known = v => typeof v === "string" && ladder.includes(v);
+  const desvio = num(m.desvio_pct), longe = m.fresco === false, f = num(m.funding_h_pct), var24 = num(m.var_24h_pct);
+  const atr = num(m.atr_pct);
+  return {
+    titulo: [text(m.fonte), text(m.moeda)].filter(Boolean).join(" · "), em: text(m.em),
+    preco: fmtPrice(preco), longe,
+    desvio: desvio == null ? "" : fmtPct(Math.abs(desvio), 2) + (longe ? " · não bate certo" : m.fresco === true ? " · bate certo" : ""),
+    var24: fmtSigned(var24), var24Sign: var24 == null ? 0 : Math.sign(var24),
+    funding: f == null ? "" : (f > 0 ? "+" : f < 0 ? "−" : "") + fmt(Math.abs(f), 4, 4) + " %/h" + (f > 0 ? " · longs pagam" : f < 0 ? " · shorts pagam" : ""),
+    oi: fmtUsd(m.oi_usd), vol24: fmtUsd(m.vol_24h_usd),
+    atr: atr == null ? "" : fmtPct(Math.abs(atr), 2), atrTf: known(m.tf) ? tfLabel(m.tf) : "",
+    tfs: (Array.isArray(m.tfs) ? m.tfs : []).filter(t => t && known(t.tf) && typeof t.tendencia === "string" && chips.hasOwnProperty(t.tendencia))
+      .slice(0, 6).map(t => ({tf: tfLabel(t.tf), palavra: trendWord(t.tendencia).toLowerCase(), chip: chips[t.tendencia]})),
+    aviso: (typeof m.aviso === "string" ? m.aviso.trim() : "") || (longe ? "O preço do screenshot está longe do preço ao vivo: pode ser um screenshot antigo ou de outro mercado, e os níveis podem já não valer." : ""),
+  };
+}
 /* one option of the RESULT as the words and numbers the page shows (the maths was done by the bot's code, not here).
    ev is the expected value the page leads with: net of the rough round-trip costs (ev_liq_r) when the bot sent it,
    and then evNota says the gross one and the cost; an analysis from before the costs has only the gross one (ev_r),
-   shown as "antes de custos" with no note */
+   shown as "antes de custos" with no note. stopAtr: the stop in ATRs of the live market ("0,84 ATR": two decimals,
+   as the bot's code decides and words it, so a refused 0,46 never reads as the 0,5 it is under), and alertas:
+   up to 4 sentences the bot's code wrote after checking the option against it; "" and [] without market data */
 function optionModel(o) {
   o = o || {};
   const dir = o.direcao === "short" ? "short" : "long", prob = num(o.prob_alvo), used = num(o.prob_usada);
   const bruto = num(o.ev_r), liq = num(o.ev_liq_r), custo = num(o.custo_r), ev = liq != null ? liq : bruto;
+  const atr = num(o.stop_atr);
   return {
+    stopAtr: atr == null ? "" : fmt(Math.abs(atr), 2, 2) + " ATR",
+    alertas: (Array.isArray(o.alertas) ? o.alertas : []).filter(a => typeof a === "string" && a.trim() !== "").slice(0, 4),
     dir, titulo: actionWord(dir), lado: dir === "long" ? "Long (compra)" : "Short (venda)",
     nome: String(o.nome ?? ""), tipo: String(o.tipo ?? ""), tf: tfLabel(o.tf),
     entrada: fmtPrice(o.entrada), stop: fmtPrice(o.stop), alvo: fmtPrice(o.alvo),
@@ -392,9 +485,13 @@ function levPick(v) {
   v = num(v);
   return v === 5 || v === 20 ? v : 10;
 }
-/* what goes to the bot: always ONE screenshot, with its timeframe ("auto": the AI reads it from the image) */
-function requestBody(b64, tf, note) {
-  return {shots: [{tf: tf === "1m" || tf === "5m" || tf === "15m" ? tf : "auto", image: String(b64 ?? "")}],
+/* what goes to the bot: always ONE screenshot, as its whole view first ("full") and then up to two pieces of it
+   ("tile"), all with the same timeframe ("auto": the AI reads it from the image). No whole view: nothing to send */
+function requestBody(images, tf, note) {
+  tf = tf === "1m" || tf === "5m" || tf === "15m" ? tf : "auto";
+  const all = (Array.isArray(images) ? images : []).filter(i => i && typeof i.b64 === "string" && i.b64 !== "");
+  const full = all.find(i => i.part === "full"), tiles = full ? all.filter(i => i.part === "tile").slice(0, 2) : [];
+  return {shots: (full ? [full] : []).concat(tiles).map(i => ({tf, image: i.b64, part: i.part})),
           note: String(note ?? "").trim().slice(0, 200)};
 }
 /* where an analysis stands. myId: the one this page asked for (null: none); waited: seconds since it asked;
@@ -458,13 +555,16 @@ $("#login").addEventListener("submit", async e => {
 /* ---------------------------------------------------------------- state */
 const API = "/api/desk/grafico";
 const LEVS = [5, 10, 20];
-const MAX_EDGE = 1568, MAX_BYTES = 300000, QUALITIES = [0.85, 0.75, 0.65];
+const MAX_EDGE = 1568, MAX_BYTES = 390000;
+/* tried in this order for each image, the first that fits wins: PNG keeps every pixel of the thin digits of the axis */
+const ENCODINGS = [["image/png"], ["image/webp", 0.95], ["image/webp", 0.9],
+                   ["image/jpeg", 0.92], ["image/jpeg", 0.85], ["image/jpeg", 0.75], ["image/jpeg", 0.65]];
 const WAIT_KEY = "deskbot-grafico-wait", LEV_KEY = "deskbot-grafico-lev";
 const S = {
   state: null,                           // the last answer of GET /api/desk/grafico
   stateAt: 0,                            // when the GET behind it was asked for (ms, 0: none yet)
   failAt: 0,                             // when the first GET of the current run of failures was asked for (0: none)
-  shot: null,                            // {b64, bytes} once the image is ready to send
+  shot: null,                            // {images: [{b64, bytes, part, mime, nativo}], srcW, srcH} once ready to send
   opening: false,                        // an image is still being shrunk
   tf: "auto",                            // the timeframe said for the screenshot: auto | 1m | 5m | 15m
   lev: levPick(store.get(LEV_KEY)),      // how the numbers are shown, never sent; 10 when nothing can be remembered
@@ -499,37 +599,61 @@ function openImage(file) {
     img.src = url;
   });
 }
-/* Whatever was chosen goes out as a JPEG of at most 1568 px on the long edge and 300 kB: first lower the quality,
-   then the size. Drawn over a dark fill so a see-through PNG stays readable. Only the result is kept, in memory. */
+/* One piece of the image (p: where it is in the source and the size to draw it, as in tilePlan) as the sharpest
+   file that fits MAX_BYTES: the formats of ENCODINGS in turn (sent without the "data:...;base64," prefix), and only
+   when none fits a smaller drawing. Over a dark fill, so a see-through PNG stays readable. -> {b64, bytes, mime,
+   w, h: the size it was drawn at, nativo: drawn pixel for pixel} or null */
+function encode(img, cv, g, p) {
+  let w = p.w, h = p.h;
+  for (let step = 0; step < 24; step++) {
+    cv.width = w; cv.height = h;
+    g.imageSmoothingQuality = "high";
+    g.fillStyle = "#0b0c0f"; g.fillRect(0, 0, w, h);
+    g.drawImage(img, p.sx, p.sy, p.sw, p.sh, 0, 0, w, h);
+    for (const [type, q] of ENCODINGS) {
+      let url = "";
+      try { url = cv.toDataURL(type, q); } catch (e) {}
+      const made = readDataUrl(url, type), bytes = made ? b64Bytes(made.b64) : 0;
+      if (made && bytes <= MAX_BYTES) return {b64: made.b64, bytes, mime: made.mime, w, h, nativo: w === p.sw && h === p.sh};
+    }
+    if (w < 200 || h < 200) break;
+    w = Math.max(1, Math.round(w * 0.85)); h = Math.max(1, Math.round(h * 0.85));
+  }
+  return null;
+}
+/* Whatever was chosen goes out as its whole view, at most 1568 px on the long edge, and, when that view lost detail,
+   two pieces of it closer to the size it came in (tilePlan), each at most 390 kB. A piece that cannot be made, or
+   that had to shrink until it shows no more than the whole view does, is left out; without the whole view there is
+   nothing to send. Only the result is kept, and only in memory. */
 async function shrink(file) {
   let opened;
   try { opened = await openImage(file); }
   catch (e) { throw new Error("Não consegui abrir esta imagem."); }
   try {
-    const img = opened.img, cv = document.createElement("canvas"), g = cv.getContext("2d");
-    let [w, h] = fitSize(img.naturalWidth, img.naturalHeight, MAX_EDGE);
-    for (let step = 0; step < 24; step++) {
-      cv.width = w; cv.height = h;
-      g.fillStyle = "#0b0c0f"; g.fillRect(0, 0, w, h);
-      g.drawImage(img, 0, 0, w, h);
-      for (const q of QUALITIES) {
-        const b64 = (cv.toDataURL("image/jpeg", q).split(",")[1]) || "";
-        if (b64 && b64Bytes(b64) <= MAX_BYTES) return {b64, bytes: b64Bytes(b64)};
-      }
-      if (w < 200 || h < 200) break;
-      w = Math.max(1, Math.round(w * 0.85)); h = Math.max(1, Math.round(h * 0.85));
+    const img = opened.img, srcW = img.naturalWidth, srcH = img.naturalHeight, plan = tilePlan(srcW, srcH);
+    const cv = document.createElement("canvas"), g = cv.getContext("2d");
+    const full = encode(img, cv, g, Object.assign({sx: 0, sy: 0, sw: srcW, sh: srcH}, plan.full));
+    if (!full) throw new Error("Não consegui reduzir esta imagem. Corta o screenshot e tenta outra vez.");
+    const images = [Object.assign(full, {part: "full"})];
+    for (const t of plan.tiles) {
+      const made = encode(img, cv, g, t);
+      if (made && made.w / t.sw > full.w / srcW) images.push(Object.assign(made, {part: "tile"}));
     }
-    throw new Error("Não consegui reduzir esta imagem. Corta o screenshot e tenta outra vez.");
+    cv.width = cv.height = 1;                  // the drawing itself is not kept
+    return {images, srcW, srcH};
   } catch (e) {
     throw new Error(/^Não consegui/.test(e.message) ? e.message : "Não consegui abrir esta imagem.");
   } finally { URL.revokeObjectURL(opened.url); }
 }
 function paintSlot() {
-  const el = $("#slot"), shot = S.shot, img = $("img", el);
+  const el = $("#slot"), shot = S.shot, img = $("img", el), said = shotInfo(shot);
   el.classList.toggle("full", !!shot);
   el.classList.toggle("busy", S.opening);
   img.hidden = !shot;
-  if (shot) img.src = "data:image/jpeg;base64," + shot.b64; else img.removeAttribute("src");
+  /* the whole view, with the format it was really made in (the mime is one of the three readDataUrl() lets through) */
+  if (shot) img.src = "data:" + shot.images[0].mime + ";base64," + shot.images[0].b64; else img.removeAttribute("src");
+  $("#shot-info").textContent = said.envio; $("#shot-info").hidden = !said.envio;
+  $("#shot-small").textContent = said.aviso; $("#shot-small").hidden = !said.aviso;
   $(".hint", el).textContent = S.opening ? "A abrir…" : shot ? "Trocar" : "Escolher screenshot";
   $(".pick", el).setAttribute("aria-label", shot ? "Trocar o screenshot do gráfico (já escolhido)" : "Escolher o screenshot do gráfico");
   $(".rm", el).disabled = !shot;
@@ -583,7 +707,7 @@ async function analyse() {
   S.sending = true; S.msg = null; renderControls();
   try {
     const r = await api(API + "/analyze", {method: "POST", headers: {"Content-Type": "application/json"},
-                                           body: JSON.stringify(requestBody(S.shot.b64, S.tf, $("#note").value))});
+                                           body: JSON.stringify(requestBody(S.shot.images, S.tf, $("#note").value))});
     if (r.id == null) throw new Error("O pedido não foi aceite. Tenta outra vez.");
     startWait(r.id);
     S.shown = null; S.watch = null; renderResult();        // the old reading leaves the screen while the new one is made
@@ -695,12 +819,35 @@ function levels(m, lm) {
   const wide = [m.entrada, m.stop, m.alvo].some(s => s.length > 8);     // a long price gets a row of its own, never cut in two
   const sm = fmtMargem(lm && lm.stopMargem), am = fmtMargem(lm && lm.alvoMargem);
   return `<div class="lvl${wide ? " wide" : ""}"><div><span>Entrada</span><b>${esc(m.entrada)}</b></div>` +
-    `<div><span>Stop</span><b>${esc(m.stop)}</b>${m.stopPct ? `<small>a ${esc(m.stopPct)}</small>` : ""}${sm ? `<small class="down">${esc(sm)} da margem</small>` : ""}</div>` +
+    `<div><span>Stop</span><b>${esc(m.stop)}</b>${m.stopPct ? `<small>a ${esc(m.stopPct)}</small>` : ""}${m.stopAtr ? `<small>${esc(m.stopAtr)}</small>` : ""}${sm ? `<small class="down">${esc(sm)} da margem</small>` : ""}</div>` +
     `<div><span>Alvo</span><b>${esc(m.alvo)}</b>${m.alvoPct ? `<small>a ${esc(m.alvoPct)}</small>` : ""}${am ? `<small class="up">${esc(am)} da margem</small>` : ""}</div></div>`;
 }
 function levNote(lm) {
   const said = levWarning(lm);
   return said ? `<p class="lw ${lm.aviso === "depois" ? "bad" : "warn"}">${esc(said)}${lm.aviso === "depois" ? " Perdias a margem toda antes de o preço lá chegar." : ""}</p>` : "";
+}
+/* what the bot's code found when it checked an option against the live market (optionModel().alertas): sentences
+   written far from here, so each one is escaped */
+function alertList(m) {
+  const said = (m && m.alertas) || [];
+  return said.length ? `<ul class="lw warn al">` + said.map(a => `<li>${esc(a)}</li>`).join("") + `</ul>` : "";
+}
+/* the live market of marketModel(). Every piece of it goes through esc(), the fixed words of the page too, so nothing
+   that came from the market API or from the model can become markup. The hour is only shown when it reads as a date */
+function marketCard(k) {
+  const row = (name, value, cls) => value
+    ? `<div><span>${esc(name)}</span><span class="mono ${esc(cls || "")}">${esc(value)}</span></div>` : "";
+  const at = when(/^\d{4}-\d\d-\d\dT[\d:.]+$/.test(k.em) ? k.em + "Z" : k.em);      // UTC, with or without the zone
+  const cap = [k.titulo, at === "—" ? "" : at].filter(Boolean).join(" · ");
+  const rows = row("Preço ao vivo", k.preco) + row("Diferença para a imagem", k.desvio, k.longe ? "down" : "") +
+    row("Variação em 24 h", k.var24, k.var24Sign > 0 ? "up" : k.var24Sign < 0 ? "down" : "") +
+    row("Funding", k.funding) + row("Open interest", k.oi) + row("Volume em 24 h", k.vol24) +
+    row(k.atrTf ? "ATR (" + k.atrTf + ")" : "ATR", k.atr);
+  const chips = k.tfs.map(t => `<span class="chip ${esc(t.chip)}">${esc(t.tf)} · ${esc(t.palavra)}</span>`).join("");
+  return `<div class="panel"><h3>Mercado ao vivo</h3>` + (cap ? `<p class="rcap">${esc(cap)}</p>` : "") +
+    `<div class="kv">` + rows + `</div>` + (chips ? `<div class="chips">` + chips + `</div>` : "") +
+    `<p class="help">Dados da API pública da Hyperliquid, tirados quando a análise foi feita. Podem diferir da corretora ` +
+    `do teu screenshot e já ter mudado entretanto.</p></div>`;
 }
 /* the leverage chooser, drawn with the result: it only changes how the numbers of the options are shown */
 function levBar(lev) {
@@ -708,7 +855,7 @@ function levBar(lev) {
   return `<div class="panel"><div class="levrow"><h3 id="h-lev">Alavancagem</h3><div class="seg lev" role="group" aria-labelledby="h-lev">` +
     LEVS.map(l => `<button type="button" data-lev="${l}" aria-pressed="${l === lev}">${l}x</button>`).join("") + `</div></div>` +
     `<p class="help">Só muda a forma de mostrar os números: nada é enviado nem aberto. Com ${esc(lev)}x a liquidação fica a cerca de ${esc(fmt(liq, 0, 1))}% do preço. ` +
-    `Os valores ignoram comissões e funding, e a distância à liquidação é aproximada (margem isolada).</p></div>`;
+    `As percentagens «da margem» não contam comissões nem funding, e a distância à liquidação é aproximada (margem isolada).</p></div>`;
 }
 const evClass = m => m.evSign > 0 ? "up" : m.evSign < 0 ? "down" : "";
 function heroCard(h, lm) {
@@ -719,6 +866,7 @@ function heroCard(h, lm) {
     ${h.motivo ? `<p class="because">${esc(h.motivo)}</p>` : ""}
     ${levels(h, lm)}
     ${levNote(lm)}
+    ${alertList(h)}
     <div class="kv">
       <div><span>R:R</span><span class="mono">${esc(h.rr)}</span></div>
       <div><span>Probabilidade estimada</span><span><b class="mono">${esc(h.prob)}</b>${h.contada ? `<br><span class="t2" style="font-size:13px">${esc(h.contada)}</span>` : ""}</span></div>
@@ -736,6 +884,7 @@ function optionCard(o, rank, lev) {
     ${m.tipo || m.tf ? `<p class="nm"><small>${esc([m.tipo, m.tf].filter(Boolean).join(" · "))}</small></p>` : ""}
     ${levels(m, lm)}
     ${levNote(lm)}
+    ${alertList(m)}
     ${m.valida ? `<p class="nums">R:R <b>${esc(m.rr)}</b> · prob. <b>${esc(m.prob)}</b>${m.contada ? ` (${esc(m.contada)})` : ""} · valor esperado ${esc(m.evQuando)} <b class="${evClass(m)}">${esc(m.ev)}</b>${m.evNota ? `<br>${esc(m.evNota)}` : ""}</p>
       ${m.equilibrio ? `<p class="sm">${esc(m.equilibrio)}.</p>` : ""}`
                : `<p class="prob"><b>Não conta:</b> ${esc(m.problema || "os níveis não fazem sentido.")}</p>`}
@@ -764,14 +913,22 @@ function resultHtml(x) {
   const head = [when(x.at), tfList(x.tfs)].filter(s => s && s !== "—").join(" · ");
   out.push(`<div class="sh"><h2>${esc(r.ativo || "Resultado")}</h2>${num(r.preco_atual) != null ? `<span>preço ${esc(fmtPrice(r.preco_atual))}</span>` : ""}</div>`);
   if (head) out.push(`<p class="rcap">análise de ${esc(head)}</p>`);
+  /* the live market the bot's code looked up: none (an older analysis, the coin not found, the API down) is said
+     in one quiet line; a screenshot whose price is far from the live one is said loudly, before any option */
+  const mk = marketModel(r.mercado);
+  if (!mk && r.legivel !== false) out.push(`<p class="rcap">Sem dados de mercado ao vivo: análise feita só pela imagem.</p>`);
   if (r.legivel === false) out.push(`<div class="panel"><h3>Não consegui ler este gráfico</h3><p class="empty" style="padding-bottom:0">${esc(r.motivo_ilegivel || "A imagem não dá para ler com segurança.")}</p></div>`);
+  if (mk && mk.aviso) out.push(`<p class="lw warn"><b>Atenção:</b> ${esc(mk.aviso)}</p>`);
   if (r.resumo) out.push(`<p class="rsum">${esc(r.resumo)}</p>`);
   const h = heroModel(r), ops = Array.isArray(r.opcoes) ? r.opcoes : [], lev = levPick(S.lev);
   /* the chooser only where it changes something: with at least one option that counts and has its distances */
   if (ops.some(o => { const lm = levModel(o, lev); return lm.stopMargem != null || lm.alvoMargem != null; })) out.push(levBar(lev));
   if (r.legivel !== false || r.melhor) out.push(heroCard(h, h.fora ? null : levModel(ops[h.index], lev)));
+  if (mk) out.push(marketCard(mk));
   const rest = ops.map((o, i) => [o, i]).filter(([, i]) => i !== h.index);
-  if (rest.length) out.push(`<div class="sh"><h2>Todas as opções</h2><span>por valor esperado</span></div>` + rest.map(([o, i]) => optionCard(o, i + 1, lev)).join(""));
+  /* the order is the one the bot's code gave: by the value after costs, or before them in an analysis older than those */
+  const order = ops.some(o => o && num(o.ev_liq_r) != null) ? "por valor esperado depois de custos" : "por valor esperado";
+  if (rest.length) out.push(`<div class="sh two"><h2>Todas as opções</h2><span>${esc(order)}</span></div>` + rest.map(([o, i]) => optionCard(o, i + 1, lev)).join(""));
   const scn = list(r.cenarios);
   if (scn.length) out.push(`<div class="sh"><h2>Cenários</h2></div><div class="panel">${scn.map(scenario).join("")}</div>`);
   const rds = list(r.leituras);

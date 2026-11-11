@@ -2,6 +2,10 @@
 -- Run after supabase_schema.sql. The analysis itself happens on the PC (Claude there); Supabase only carries it.
 -- The whole file can be run again: the functions are replaced and the timer keeps its one name.
 --
+-- ORDER when the page changes: run this file BEFORE publishing docs/grafico.html. The app_chart of before the
+-- crops kept only "tf" and "image" of each shot: a page that sends "part" to it gets no error, the PC just reads
+-- the whole view and its two crops as three separate screenshots.
+--
 -- Why two keys outside the "app:" prefix: app_state() sends every changed "app:%" row to every poll, and a
 -- screenshot is hundreds of KB. "chart:in" is read once by the runner and then blanked; "chart:out" is small
 -- and has its own reader, so the page never depends on the rolling p_since cursor of app_state().
@@ -12,20 +16,26 @@ create extension if not exists pg_cron;
 
 create or replace function public.app_chart(p_token text, p_shots jsonb, p_note text default '') returns bigint
 language plpgsql security definer set search_path = '' as $$
-declare new_id bigint; s jsonb; clean jsonb := '[]'::jsonb;
+declare new_id bigint; s jsonb; clean jsonb := '[]'::jsonb; n int := 0;
 begin
   if not public._session_ok(p_token) then raise exception 'login needed' using errcode = '28000'; end if;
   if p_shots is null or jsonb_typeof(p_shots) <> 'array' or jsonb_array_length(p_shots) not between 1 and 3 then
     raise exception 'bad shots';
   end if;
+  -- "part": 'full' is a whole screenshot, 'tile' a crop of the full one before it (same chart, read at full
+  -- resolution). The first shot is always a full one. jsonb_array_elements gives the shots in their order.
   for s in select * from jsonb_array_elements(p_shots) loop
+    n := n + 1;
     if jsonb_typeof(s) <> 'object' or jsonb_typeof(s -> 'image') is distinct from 'string'
-       or coalesce(s ->> 'tf', 'auto') not in ('1m', '5m', '15m', 'auto') then
+       or coalesce(s ->> 'tf', 'auto') not in ('1m', '5m', '15m', 'auto')
+       or coalesce(s ->> 'part', 'full') not in ('full', 'tile')
+       or (n = 1 and coalesce(s ->> 'part', 'full') <> 'full') then
       raise exception 'bad shots';
     end if;
     -- 400 000 bytes of image are 533 336 base64 characters; the PC checks the decoded size again.
     if length(s ->> 'image') > 540000 then raise exception 'too large'; end if;
-    clean := clean || jsonb_build_array(jsonb_build_object('tf', coalesce(s ->> 'tf', 'auto'), 'image', s ->> 'image'));
+    clean := clean || jsonb_build_array(jsonb_build_object(
+      'tf', coalesce(s ->> 'tf', 'auto'), 'part', coalesce(s ->> 'part', 'full'), 'image', s ->> 'image'));
   end loop;
   -- Same overall brake as app_command, plus one for this desk: each analysis is a paid model call on the PC.
   -- Two names, so the phone can say which one it hit: the first passes in a minute, the second in up to ten.

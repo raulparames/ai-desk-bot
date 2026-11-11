@@ -87,9 +87,21 @@ def reply(text=json.dumps(ANSWER), stop_reason="end_turn"):
                                                              SimpleNamespace(type="text", text=text)])
 
 
+class FakeClient:
+    """The Anthropic client as llm.py uses it: beta.messages.create, and with_options for a call with a limit
+    (`options` keeps what each such call asked for; the SDK returns a copy of the client, the fake returns itself)."""
+
+    def __init__(self, messages):
+        self.beta, self.options = SimpleNamespace(messages=messages), []
+
+    def with_options(self, **kw):
+        self.options.append(kw)
+        return self
+
+
 def api(monkeypatch, messages):
     """An LLM on the anthropic backend whose client is a recorder; any subprocess is a test failure."""
-    monkeypatch.setattr(anthropic, "Anthropic", lambda: SimpleNamespace(beta=SimpleNamespace(messages=messages)))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: FakeClient(messages))
     monkeypatch.setattr(subprocess, "run", forbidden)
     return LLM(AIConfig(backend="anthropic", model="claude-test-model", effort="low"))
 
@@ -226,6 +238,32 @@ def test_the_timeout_reason_says_how_long_it_waited(monkeypatch):
     assert "77" in bot.last_error
 
 
+def test_one_call_can_have_its_own_shorter_timeout(monkeypatch):
+    run = FakeRun(GOOD)
+    bot = cli(monkeypatch, run)
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, effort="low", timeout_s=60) == ANSWER
+    assert run.kw["timeout"] == 60
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, None, 12.5) == ANSWER      # by position too
+    assert run.kw["timeout"] == 12.5
+    cmd = list(run.cmd)
+    bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS)                                    # the next call: as configured
+    assert run.kw["timeout"] == 77 and run.cmd == cmd and bot.cfg.timeout_s == 77        # nothing else changes
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, timeout_s=None) == ANSWER and run.kw["timeout"] == 77
+
+
+@pytest.mark.parametrize("bad", [0, -5, True, False, "60", [60], float("nan"), float("inf"), 1e9, {}])
+def test_a_timeout_that_is_not_a_sane_number_of_seconds_is_the_configured_one(monkeypatch, bad):
+    run = FakeRun(GOOD)
+    assert cli(monkeypatch, run).ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, timeout_s=bad) == ANSWER
+    assert run.kw["timeout"] == 77
+
+
+def test_the_timeout_reason_says_how_long_this_call_waited(monkeypatch):
+    bot = cli(monkeypatch, FakeRun(raises=subprocess.TimeoutExpired(cmd="claude", timeout=60)))
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, timeout_s=60) is None
+    assert "60" in bot.last_error and "77" not in bot.last_error
+
+
 def test_a_success_clears_the_reason_left_by_the_failure_before_it(monkeypatch):
     run = FakeRun("garbage")
     bot = cli(monkeypatch, run)
@@ -294,6 +332,50 @@ def test_the_api_call_sends_the_pictures_before_the_text_and_no_tools(monkeypatc
                   "thinking": {"type": "adaptive"},
                   "output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
                   "betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+
+
+def test_the_api_call_gets_a_timeout_only_when_one_is_asked_for(monkeypatch):
+    messages = FakeMessages(reply())
+    bot = api(monkeypatch, messages)
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, effort="low", timeout_s=60) == ANSWER
+    # the limit is the whole call: one attempt of 60 s, not 60 s for each of the SDK's three
+    assert bot._client.options == [{"timeout": 60, "max_retries": 0}]
+    limited = messages.calls[-1]
+    assert "timeout" not in limited
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, effort="low") == ANSWER
+    assert messages.calls[-1] == limited and len(bot._client.options) == 1                # the SDK's own stay
+    for bad in (0, -1, True, "60", float("nan")):
+        bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, effort="low", timeout_s=bad)
+    assert bot.ask_json(SYSTEM, PROMPT, SCHEMA) == ANSWER
+    assert len(bot._client.options) == 1 and not any("timeout" in c or "max_retries" in c for c in messages.calls)
+
+
+def test_an_api_call_that_times_out_is_none_with_a_reason(monkeypatch):
+    messages = FakeMessages(raises=anthropic.APITimeoutError(request=_request()))
+    bot = api(monkeypatch, messages)
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, timeout_s=60) is None
+    assert bot.last_error.strip() and bot.last_error != UNEXPECTED
+    assert bot._client.options == [{"timeout": 60, "max_retries": 0}] and len(messages.calls) == 1
+
+
+def test_the_real_sdk_tries_a_call_with_a_limit_once(monkeypatch):
+    """The SDK itself, on a transport that only ever times out (no socket is opened): with the limit as a plain
+    `timeout=` argument it tried three times, 60 s each."""
+    httpx = pytest.importorskip("httpx2")                 # the HTTP library this SDK is built on
+    seen = []
+
+    def stalled(request):
+        seen.append(request.extensions["timeout"])
+        raise httpx.ReadTimeout("stalled", request=request)
+
+    client = anthropic.Anthropic(api_key="test-key-not-real", base_url="https://sdk.test",
+                                 http_client=httpx.Client(transport=httpx.MockTransport(stalled)))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    bot = LLM(AIConfig(backend="anthropic", model="claude-test-model", effort="low"))
+    assert bot.ask_json_images(SYSTEM, PROMPT, SCHEMA, SHOTS, effort="low", timeout_s=60) is None
+    assert len(seen) == 1 and set(seen[0].values()) == {60}
+    assert bot.last_error.strip() and bot.last_error != UNEXPECTED and bot.calls == 0
 
 
 @pytest.mark.parametrize("answer", [

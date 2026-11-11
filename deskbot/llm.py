@@ -113,8 +113,11 @@ class LLM:
             return None
 
     def ask_json_images(self, system: str, prompt: str, schema: dict, images: list[tuple[bytes, str]],
-                        effort: str | None = None) -> dict | None:
+                        effort: str | None = None, timeout_s: float | None = None) -> dict | None:
         """ask_json with screenshots in front of the prompt. images = [(raw_bytes, media_type)].
+
+        timeout_s: how long this one call may take (None: the configured timeout). A quick first look at an
+        image must not be able to use up the time the real analysis needs.
 
         The model gets no tools on either backend: it only looks and answers. Never raises, because the
         caller is a background job: any failure returns None and leaves the reason in self.last_error.
@@ -127,10 +130,12 @@ class LLM:
         try:
             content = _image_content(images, prompt)
             effort = effort or self.cfg.effort
+            if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or not 0 < timeout_s < 1e6:
+                timeout_s = None
             if self.backend == "claude-cli":
-                out = self._ask_cli_images(system, content, schema, effort)
+                out = self._ask_cli_images(system, content, schema, effort, timeout_s)
             else:
-                out = self._ask_api(system, content, schema, effort, False)
+                out = self._ask_api(system, content, schema, effort, False, timeout_s)
             if not isinstance(out, dict):
                 raise LLMError("answer was not a JSON object", pt="A resposta da IA veio num formato inesperado")
             return out
@@ -142,7 +147,7 @@ class LLM:
             self.last_error = "Falha inesperada ao falar com a IA"
         return None
 
-    def _ask_cli_images(self, system, content, schema, effort) -> dict:
+    def _ask_cli_images(self, system, content, schema, effort, timeout_s=None) -> dict:
         """`claude -p` only takes an image through stream-json on stdin; the other way would be handing the
         model a file-reading tool, and this call must stay tool-less."""
         cmd = [self._claude, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
@@ -151,14 +156,15 @@ class LLM:
                "--no-session-persistence", "--model", self.cfg.model, "--effort", effort,
                "--system-prompt", system]
         line = json.dumps({"type": "user", "message": {"role": "user", "content": content}}) + "\n"
+        timeout_s = self.cfg.timeout_s if timeout_s is None else timeout_s
         try:
             proc = subprocess.run(cmd, input=line, capture_output=True, text=True,
-                                  encoding="utf-8", timeout=self.cfg.timeout_s,
+                                  encoding="utf-8", timeout=timeout_s,
                                   # no console window flashing up when run from Task Scheduler
                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except subprocess.TimeoutExpired as exc:
-            raise LLMError(f"claude CLI timed out after {self.cfg.timeout_s}s",
-                           pt=f"O Claude não respondeu em {self.cfg.timeout_s} s") from exc
+            raise LLMError(f"claude CLI timed out after {timeout_s}s",
+                           pt=f"O Claude não respondeu em {timeout_s} s") from exc
         except OSError as exc:
             raise LLMError(f"claude CLI could not start: {exc}", pt="Não consegui arrancar o Claude neste PC") from exc
         out = None
@@ -210,7 +216,7 @@ class LLM:
             raise LLMError(f"claude CLI error: {str(out.get('result'))[:300]}")
         return out["structured_output"]
 
-    def _ask_api(self, system, prompt, schema, effort, web_search) -> dict:
+    def _ask_api(self, system, prompt, schema, effort, web_search, timeout_s=None) -> dict:
         """`prompt` is the user turn: plain text from ask_json, a list of content blocks from ask_json_images."""
         import anthropic
 
@@ -227,8 +233,13 @@ class LLM:
         )
         if web_search:
             kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
+        client = self._client                # without a limit asked for, the client's own timeout and retries stay
+        if timeout_s is not None:
+            # The SDK's timeout is per attempt and it tries a timed-out call again (twice by default): 60 s
+            # asked for would be about 3 minutes. A call with a limit is ONE attempt.
+            client = client.with_options(timeout=timeout_s, max_retries=0)
         try:
-            resp = self._client.beta.messages.create(**kwargs)
+            resp = client.beta.messages.create(**kwargs)
         except anthropic.RateLimitError as exc:
             raise LLMError("rate limited", pt="Limite de pedidos à IA atingido; tenta daqui a pouco") from exc
         except anthropic.APIStatusError as exc:
